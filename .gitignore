@@ -15,6 +15,7 @@ __pycache__/
 *.ppt
 *.pptm
 general.json
+.devcontainer/
 
 # -------------------------------
 # データ関連（追跡対象外）
