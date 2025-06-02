@@ -1,15 +1,12 @@
 # データ処理・テンプレートなど（既存）
-jinja2
 numpy
 pandas
-psycopg2-binary
 lxml
 yaml
 python-dotenv
 
 # 可視化・テスト（任意）
 jupyterlab
-plotly
 matplotlib
 seaborn
 pytest
@@ -18,6 +15,4 @@ IPython
 # 追加：機械学習・DB操作・深層学習
 scikit-learn
 scipy
-
-# VASP関係
-pymatgen
+XGBoost

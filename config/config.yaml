@@ -30,6 +30,7 @@ data_path:
   processed_data: "data/processed/"
   submits: "data/submissions/"
   model_checkpoints: "models/checkpoints/"
+  experiments: "experiments/"
   logs: "logs/"
 
 train_config:
@@ -83,10 +84,3 @@ tests:
 README.md:
   title: "Data Science Project"
   description: "This project aims to..."
-  
-requirements.txt:
-  - pandas
-  - numpy
-  - scikit-learn
-  - matplotlib
-  - seaborn
