@@ -4,7 +4,7 @@ services:
   app:
     build:
       context: ./docker/app
-    container_name: app
+    container_name: smbc_learning_app
     volumes:
       - .:/workspace
       - ${SSH_AUTH_SOCK}:/ssh-agent  # SSHエージェントのソケットをマウント

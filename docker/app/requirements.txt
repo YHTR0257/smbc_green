@@ -2,7 +2,7 @@
 numpy
 pandas
 lxml
-yaml
+pyyaml
 python-dotenv
 
 # 可視化・テスト（任意）
