@@ -28,6 +28,7 @@ src:
 data_path:
   raw_data: "data/raw/"
   processed_data: "data/processed/"
+  reports: "reports/"
   submits: "data/submissions/"
   model_checkpoints: "models/checkpoints/"
   experiments: "experiments/"
@@ -35,7 +36,7 @@ data_path:
 
 train_config:
   general:
-    target: "target_variable" # The target column in the dataset
+    target: "price_actual"
     test_size: 0.2
     validation_size: 0.1
     random_seed: [42, 123, 456]
@@ -74,12 +75,6 @@ reports:
 tests:
   - test_data_processing.py
   - test_models.py
-
-.gitignore:
-  - __pycache__/
-  - *.pyc
-  - .DS_Store
-  - .env
 
 README.md:
   title: "Data Science Project"

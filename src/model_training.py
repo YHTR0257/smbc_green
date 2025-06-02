@@ -7,6 +7,10 @@ import joblib
 from src.models import Model1  # Assuming a Model class is defined in models.py
 from pathlib import Path
 import yaml
+import dotenv
+
+# Load environment variables
+dotenv.load_dotenv()
 
 
 def load_data(file_path:Path):
