@@ -1,0 +1,18 @@
+Experiment 1 Results
+
+Model Performance:
+- Accuracy: 0.95
+- Precision: 0.93
+- Recall: 0.94
+- F1 Score: 0.93
+
+Hyperparameters:
+- Learning Rate: 0.001
+- Batch Size: 32
+- Epochs: 50
+
+Training Time: 120 minutes
+
+Notes:
+- The model performed well on the validation set.
+- Further tuning of hyperparameters may improve performance.

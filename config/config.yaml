@@ -1,0 +1,92 @@
+notebooks:
+  - exploratory.ipynb
+  - feature_engineering.ipynb
+  - model_prototyping.ipynb
+
+src:
+  data_processing.py:
+    functions:
+      - load_data
+      - clean_data
+      - transform_data
+  models.py:
+    classes:
+      - ModelArchitecture
+  training.py:
+    functions:
+      - train_model
+      - evaluate_model
+  pipelines.py:
+    functions:
+      - data_pipeline
+      - training_pipeline
+  utils.py:
+    functions:
+      - save_model
+      - load_model
+
+data_path:
+  raw_data: "data/raw/"
+  processed_data: "data/processed/"
+  submits: "data/submissions/"
+  model_checkpoints: "models/checkpoints/"
+  logs: "logs/"
+
+train_config:
+  general:
+    target: "target_variable" # The target column in the dataset
+    test_size: 0.2
+    validation_size: 0.1
+    random_seed: [42, 123, 456]
+    log_level: "INFO"
+  random_forest:
+    n_estimators: [100, 200]
+    max_depth: [10, 20]
+    min_samples_split: [2, 5]
+    min_samples_leaf: [1, 2]
+  neural_network:
+    input_size: [64, 128]
+    hidden_layers: [[128, 64], [256, 128]]
+    output_size: [10, 20]
+    activation_function: ["relu", "tanh"]
+    dropout_rate: [0.5, 0.3]
+  denoising_autoencoder:
+    input_size: [64, 128]
+    hidden_layers: [[128, 64], [256, 128]]
+    output_size: [10, 20]
+    activation_function: ["relu", "tanh"]
+    dropout_rate: [0.5, 0.3]
+  
+
+experiments:
+  - experiment_20250602_001/
+  - experiment_20250602_002/
+
+models:
+  - best_model_v1.pth
+  - latest_model.pth
+
+reports:
+  - final_report.pdf
+  - visualizations/
+
+tests:
+  - test_data_processing.py
+  - test_models.py
+
+.gitignore:
+  - __pycache__/
+  - *.pyc
+  - .DS_Store
+  - .env
+
+README.md:
+  title: "Data Science Project"
+  description: "This project aims to..."
+  
+requirements.txt:
+  - pandas
+  - numpy
+  - scikit-learn
+  - matplotlib
+  - seaborn
