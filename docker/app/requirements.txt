@@ -16,3 +16,5 @@ IPython
 scikit-learn
 scipy
 XGBoost
+optuna
+optuna-integration[xgboost]

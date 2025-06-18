@@ -83,6 +83,25 @@ train_config:
     # Validation settings
     use_validation: true
     validation_metric: "rmse"
+    # Optuna hyperparameter optimization
+    optuna:
+      enabled: true
+      n_trials: 100
+      timeout: 3600  # seconds (1 hour)
+      direction: minimize  # minimize RMSE
+      pruner: median  # median, successive_halving, hyperband
+      study_name: "xgboost_optimization"
+      storage: null  # Use in-memory storage, can be set to sqlite:///optuna.db
+      # Hyperparameter search spaces
+      search_space:
+        max_depth: [3, 10]  # int range
+        eta: [0.01, 0.3]    # float range
+        subsample: [0.6, 1.0]  # float range
+        colsample_bytree: [0.6, 1.0]  # float range
+        min_child_weight: [1, 10]  # int range
+        gamma: [0, 5]  # float range
+        reg_alpha: [0, 10]  # float range
+        reg_lambda: [1, 10]  # float range
   
 
 experiments:

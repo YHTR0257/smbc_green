@@ -21,9 +21,22 @@ def load_data(file_path: Path):
     data = pd.read_csv(file_path)
     return data
 
-def train_model(X_train, y_train, X_val, y_val, config: dict):
+def train_model(X_train, y_train, X_val, y_val, config: dict, optimize=False):
     """Train the model using the training data with validation."""
     model = XGBoost(config)  # Initialize the model
+    
+    # Run hyperparameter optimization if requested
+    if optimize:
+        print("Running hyperparameter optimization...")
+        model.optimize_hyperparameters(X_train, y_train, X_val, y_val)
+        
+        # Get optimization results
+        results = model.get_optimization_results()
+        if results['best_params']:
+            print("Optimization completed. Best parameters:")
+            for param, value in results['best_params'].items():
+                print(f"  {param}: {value}")
+    
     model.train(X_train, y_train, X_val, y_val)  # Fit the model with validation
     return model
 
@@ -93,9 +106,16 @@ def main():
     # Get XGBoost configuration
     xgb_config = config['train_config']['xgboost']
     
+    # Check if hyperparameter optimization is enabled
+    optuna_enabled = xgb_config.get('optuna', {}).get('enabled', False)
+    
     # Train the model with validation
-    print("Training XGBoost model...")
-    model = train_model(X_train, y_train, X_val, y_val, xgb_config)
+    if optuna_enabled:
+        print("Training XGBoost model with hyperparameter optimization...")
+        model = train_model(X_train, y_train, X_val, y_val, xgb_config, optimize=True)
+    else:
+        print("Training XGBoost model...")
+        model = train_model(X_train, y_train, X_val, y_val, xgb_config, optimize=False)
     
     # Evaluate the model on both training and validation sets
     print("\nEvaluating model performance...")
