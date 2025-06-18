@@ -122,27 +122,29 @@ def describe_data(train_df: pd.DataFrame, test_df: pd.DataFrame, config):
 if __name__ == "__main__":
     # Load configuration
     print(os.getcwd())
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.yaml')
+    parent_dir = Path(__file__).parent.parent
+    config_path = os.path.join(parent_dir, 'config', 'config.yml')
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found at {config_path}. Please check the path.")
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
-    config['exp_name'] = "20250602"
+    config['exp_name'] = "20250618"
 
-    train_data_path = Path(os.path.join(os.path.dirname(__file__), '..', config['data_path']['raw_data'], 'train.csv'))
-    test_data_path = Path(os.path.join(os.path.dirname(__file__), '..', config['data_path']['raw_data'], 'test.csv'))
+    train_data_path = Path(os.path.join(parent_dir, config['data_path']['raw_data'], 'train.csv'))
+    test_data_path = Path(os.path.join(parent_dir, config['data_path']['raw_data'], 'test.csv'))
     if not train_data_path.exists():
         raise FileNotFoundError(f"Training data file not found at {train_data_path}. Please check the path.")
 
     # Load data
     data_processor = DataProcessor(train_file_path=train_data_path, test_file_path=test_data_path, config=config)
-    train_df, test_df = data_processor.process()
+    train_df, val_df, test_df = data_processor.process_all()
 
     # Perform feature engineering
-    train_df, test_df = feature_engineering(train_df, config), feature_engineering(test_df, config)
+    train_df, val_df, test_df = feature_engineering(train_df, config), feature_engineering(val_df, config), feature_engineering(test_df, config)
 
+    _train_df = pd.concat([train_df, val_df], ignore_index=True)
     # Describe the data
-    describe_data(train_df, test_df, config)
+    describe_data(_train_df, test_df, config)
 
     # Save the processed data
     output_path = Path(os.path.join(config['data_path']['processed_data'], f'dataset_{config["exp_name"]}'))

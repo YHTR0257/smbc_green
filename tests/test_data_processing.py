@@ -100,12 +100,16 @@ def test_preprocess_data_with_train_ref(sample_data):
 
 
 def test_data_processor_integration():
-    """Test DataProcessor class integration."""
+    """Test DataProcessor class integration with process_all method."""
     config = {
         'train_config': {
             'general': {
                 'target': 'price_actual',
-                'drop_columns': ['valencia_snow_3h', 'madrid_snow_3h']
+                'drop_columns': ['valencia_snow_3h', 'madrid_snow_3h'],
+                'use_time_split': True,
+                'time_column': 'time',
+                'train_years': [2015, 2016],
+                'validation_year': 2017
             }
         },
         'test_config': {
@@ -121,17 +125,29 @@ def test_data_processor_integration():
         config=config
     )
     
-    train_processed, test_processed = processor.process()
+    train_processed, val_processed, test_processed = processor.process_all()
     
     assert train_processed is not None
+    assert val_processed is not None
     assert test_processed is not None
     assert len(train_processed) > 0
+    assert len(val_processed) > 0
     assert len(test_processed) > 0
     
-    # Check that target column is preserved in training data
+    # Check that target column is preserved in training and validation data
     assert 'price_actual' in train_processed.columns
+    assert 'price_actual' in val_processed.columns
     # Check that target column is not in test data
     assert 'price_actual' not in test_processed.columns
+    
+    # Check that processed data is stored in instance attributes
+    assert processor.train_df is not None
+    assert processor.val_df is not None
+    assert processor.test_df is not None
+
+
+
+
 
 
 @pytest.mark.unit
@@ -160,3 +176,61 @@ def test_preprocess_data_edge_cases():
     assert train_result is not None
     assert 'constant_col_scaled' in test_result.columns
     assert 'constant_col_scaled' in train_result.columns
+
+
+def test_data_processor_save_functionality():
+    """Test DataProcessor save functionality."""
+    import tempfile
+    import shutil
+    
+    config = {
+        'train_config': {
+            'general': {
+                'target': 'price_actual',
+                'drop_columns': ['valencia_snow_3h', 'madrid_snow_3h'],
+                'use_time_split': True,
+                'time_column': 'time',
+                'train_years': [2015, 2016],
+                'validation_year': 2017
+            }
+        }
+    }
+    
+    processor = DataProcessor(
+        train_file_path=Path('data/raw/train.csv'),
+        test_file_path=Path('data/raw/test.csv'),
+        config=config
+    )
+    
+    # Test that saving fails before processing
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        output_path = Path(tmp_dir) / 'output'
+        
+        # Should raise error if trying to save before processing
+        with pytest.raises(ValueError, match="Data must be processed first"):
+            processor.save_processed_data(output_path)
+        
+        # Process data first
+        train_data, val_data, test_data = processor.process_all()
+        
+        # Now saving should work
+        processor.save_processed_data(output_path)
+        
+        # Check that files were created
+        assert (output_path / 'train_data.csv').exists()
+        assert (output_path / 'val_data.csv').exists()
+        assert (output_path / 'test_data.csv').exists()
+        
+        # Check that saved files can be loaded
+        saved_train = pd.read_csv(output_path / 'train_data.csv')
+        saved_val = pd.read_csv(output_path / 'val_data.csv')
+        saved_test = pd.read_csv(output_path / 'test_data.csv')
+        
+        assert len(saved_train) > 0
+        assert len(saved_val) > 0
+        assert len(saved_test) > 0
+        
+        # Check that target column is in train/val but not test
+        assert 'price_actual' in saved_train.columns
+        assert 'price_actual' in saved_val.columns
+        assert 'price_actual' not in saved_test.columns

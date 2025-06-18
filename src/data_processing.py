@@ -101,6 +101,8 @@ def preprocess_data(test_df: pd.DataFrame, train_df: pd.DataFrame):
     return test_df, train_df
 
 
+
+
 def split_data(data, train_size=0.8):
     """Split the data into training and testing sets."""
     from sklearn.model_selection import train_test_split
@@ -160,54 +162,137 @@ class DataProcessor:
         self.train_data = load_data(train_file_path)
         self.test_data = load_data(test_file_path)
         self.config = config
-    
-    def process(self):
-        """Process the data."""
-        self.train_data = self.train_data.drop(columns=self.config.get('train_config', {}).get('general', {}).get('drop_columns', []), errors='ignore')
-        self.test_data = self.test_data.drop(columns=self.config.get('test_config', {}).get('general', {}).get('drop_columns', []), errors='ignore')
-        _target = self.train_data[self.config['train_config']['general']['target']]
-        self.train_data.drop(columns=[self.config['train_config']['general']['target']], inplace=True)
         
-        # Process training data first
-        self.train_data, self.test_data = preprocess_data(self.test_data, self.train_data)
-        
-        self.train_data = pd.concat([self.train_data, _target], axis=1)
-        return self.train_data, self.test_data
+        # Processed data attributes
+        self.train_df = None
+        self.val_df = None
+        self.test_df = None
     
-    def process_with_time_split(self):
-        """Process the data with time-based train/validation split."""
+    def process_all(self):
+        """Process data and return train, validation, and test datasets.
+        
+        Returns:
+            tuple: (train_data, val_data, test_data)
+        """
         general_config = self.config.get('train_config', {}).get('general', {})
         
-        # Drop specified columns
+        # Drop specified columns from both datasets
         drop_columns = general_config.get('drop_columns', [])
-        self.train_data = self.train_data.drop(columns=drop_columns, errors='ignore')
+        train_data_clean = self.train_data.drop(columns=drop_columns, errors='ignore')
+        test_data_clean = self.test_data.drop(columns=drop_columns, errors='ignore')
         
-        # Extract target before preprocessing
+        # Extract target column before splitting
         target_col = general_config.get('target', 'price_actual')
-        target_data = self.train_data[target_col].copy()
-        features_data = self.train_data.drop(columns=[target_col])
+        if target_col not in train_data_clean.columns:
+            raise ValueError(f"Target column '{target_col}' not found in training data")
         
-        # Time-based split
-        train_features, val_features = time_based_split(features_data, general_config)
+        train_target = train_data_clean[target_col].copy()
+        train_features = train_data_clean.drop(columns=[target_col])
         
-        # Get corresponding target values for train/val splits
-        train_indices = train_features.index
-        val_indices = val_features.index
-        train_target = target_data.loc[train_indices]
-        val_target = target_data.loc[val_indices]
+        # Time-based split of train data into train/val
+        train_features_split, val_features_split = time_based_split(train_features, general_config)
         
-        # Preprocess features using train data for normalization
-        train_features_processed, val_features_processed = preprocess_data(val_features, train_features)
+        # Get corresponding target values
+        train_target_split = train_target.loc[train_features_split.index]
+        val_target_split = train_target.loc[val_features_split.index]
         
-        # Combine features and target
-        train_data_final = pd.concat([train_features_processed, train_target], axis=1)
-        val_data_final = pd.concat([val_features_processed, val_target], axis=1)
+        # Handle categorical variables for all datasets
+        categorical_cols = train_features_split.select_dtypes(include=['object']).columns.tolist()
+        weather_text_cols = [col for col in categorical_cols if any(x in col for x in ['weather_main', 'weather_description', 'weather_icon'])]
         
-        return train_data_final, val_data_final
+        train_features_split = train_features_split.drop(columns=weather_text_cols, errors='ignore')
+        val_features_split = val_features_split.drop(columns=weather_text_cols, errors='ignore')
+        test_data_clean = test_data_clean.drop(columns=weather_text_cols, errors='ignore')
+        
+        # Calculate discomfort indices
+        train_features_split = cal_discomfort(train_features_split)
+        val_features_split = cal_discomfort(val_features_split)
+        test_data_clean = cal_discomfort(test_data_clean)
+        
+        # Get numeric columns for scaling
+        scale_cols = train_features_split.select_dtypes(include=['number']).columns.tolist()
+        train_scaled_cols = []
+        val_scaled_cols = []
+        test_scaled_cols = []
 
-    def save_processed_data(self, output_path:Path):
-        """Save the processed data to the specified output path."""
-        train_path = Path(output_path) / 'train_data.csv'
-        test_path = Path(output_path) / 'test_data.csv'
-        save_data(self.train_data, train_path)
-        save_data(self.test_data, test_path)
+        # Apply normalization using train statistics
+        for col in scale_cols:
+            # Calculate statistics from training data only
+            mean_col = train_features_split[col].mean()
+            std_col = train_features_split[col].std(ddof=0)
+
+            # Apply normalization to all three datasets
+            if std_col != 0:
+                train_scaled = (train_features_split[col] - mean_col) / std_col
+                val_scaled = (val_features_split[col] - mean_col) / std_col
+                test_scaled = (test_data_clean[col] - mean_col) / std_col
+            else:
+                train_scaled = train_features_split[col] * 0
+                val_scaled = val_features_split[col] * 0
+                test_scaled = test_data_clean[col] * 0
+
+            # Create scaled column DataFrames
+            train_scaled_cols.append(pd.DataFrame({
+                f"{col}_mean_to_t": [mean_col] * len(train_features_split),
+                f"{col}_std_to_t": [std_col] * len(train_features_split),
+                f"{col}_scaled": train_scaled,
+            }, index=train_features_split.index))
+            
+            val_scaled_cols.append(pd.DataFrame({
+                f"{col}_mean_to_t": [mean_col] * len(val_features_split),
+                f"{col}_std_to_t": [std_col] * len(val_features_split),
+                f"{col}_scaled": val_scaled,
+            }, index=val_features_split.index))
+            
+            test_scaled_cols.append(pd.DataFrame({
+                f"{col}_mean_to_t": [mean_col] * len(test_data_clean),
+                f"{col}_std_to_t": [std_col] * len(test_data_clean),
+                f"{col}_scaled": test_scaled,
+            }, index=test_data_clean.index))
+        
+        # Concatenate scaled columns
+        train_processed = pd.concat([train_features_split] + train_scaled_cols, axis=1)
+        val_processed = pd.concat([val_features_split] + val_scaled_cols, axis=1)
+        test_processed = pd.concat([test_data_clean] + test_scaled_cols, axis=1)
+        
+        # Fill any remaining NaN values
+        train_processed = train_processed.fillna(0)
+        val_processed = val_processed.fillna(0)
+        test_processed = test_processed.fillna(0)
+        
+        # Add target back to train and val
+        self.train_df = pd.concat([train_processed, train_target_split], axis=1)
+        self.val_df = pd.concat([val_processed, val_target_split], axis=1)
+        self.test_df = test_processed
+        
+        return self.train_df, self.val_df, self.test_df
+
+    def save_processed_data(self, output_path: Path):
+        """Save the processed data to the specified output path.
+        
+        Args:
+            output_path: Base path for saving the processed datasets
+        
+        Raises:
+            ValueError: If data hasn't been processed yet
+        """
+        if self.train_df is None or self.val_df is None or self.test_df is None:
+            raise ValueError("Data must be processed first. Call process_all() before saving.")
+        
+        # Ensure output directory exists
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Define file paths
+        train_path = output_path / 'train_data.csv'
+        val_path = output_path / 'val_data.csv'
+        test_path = output_path / 'test_data.csv'
+        
+        # Save all three datasets
+        save_data(self.train_df, train_path)
+        save_data(self.val_df, val_path)
+        save_data(self.test_df, test_path)
+        
+        print(f"Saved processed data to {output_path}:")
+        print(f"  - Train: {len(self.train_df)} samples -> {train_path}")
+        print(f"  - Validation: {len(self.val_df)} samples -> {val_path}")
+        print(f"  - Test: {len(self.test_df)} samples -> {test_path}")
