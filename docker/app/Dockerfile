@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python${PYTHON_VERSION} \
     python3-pip \
     git \
+    sudo \
     build-essential \
     curl \
     libffi-dev \
@@ -30,6 +31,20 @@ RUN pip install --no-cache-dir --upgrade pip
 
 # 作業ディレクトリの設定
 WORKDIR /workspace
+
+# /etc/sudoers.d ディレクトリが存在しない場合に作成する
+RUN mkdir -p /etc/sudoers.d
+RUN pip install --no-cache-dir --upgrade pip
+
+# vscode ユーザーを作成
+RUN useradd -m -s /bin/bash vscode \
+    && echo "vscode ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vscode \
+    && chmod 0440 /etc/sudoers.d/vscode
+
+# Set up Python environment
+ENV HOME=/home/vscode
+USER vscode
+
 
 # requirements.txtをコピーしてPython依存関係をインストール
 COPY requirements.txt .

@@ -37,10 +37,16 @@ data_path:
 train_config:
   general:
     target: "price_actual"
+    drop_columns: ["valencia_snow_3h", "madrid_snow_3h", "bilbao_snow_3h", "barcelona_snow_3h", "seville_snow_3h"]
     test_size: 0.2
     validation_size: 0.1
     random_seed: [42, 123, 456]
     log_level: "INFO"
+    # Time-based split configuration
+    time_column: "time"
+    train_years: [2015, 2016]
+    validation_year: 2017
+    use_time_split: true
   random_forest:
     n_estimators: [100, 200]
     max_depth: [10, 20]
@@ -58,6 +64,25 @@ train_config:
     output_size: [10, 20]
     activation_function: ["relu", "tanh"]
     dropout_rate: [0.5, 0.3]
+  xgboost:
+    objective: reg:squarederror
+    # GPU/CPU configuration
+    use_gpu: auto             # auto, true, false
+    tree_method_gpu: gpu_hist # GPU tree method
+    tree_method_cpu: hist     # CPU tree method
+    predictor_gpu: gpu_predictor # GPU predictor
+    predictor_cpu: auto       # CPU predictor
+    max_depth: 6
+    eta: 0.1
+    eval_metric: rmse
+    num_boost_round: 1000
+    subsample: 0.8
+    colsample_bytree: 0.8
+    early_stopping_rounds: 50
+    verbose_eval: 100
+    # Validation settings
+    use_validation: true
+    validation_metric: "rmse"
   
 
 experiments:
