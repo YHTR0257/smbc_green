@@ -95,6 +95,8 @@ def main():
     y_val = val_data[target_col]
     
     # Test data doesn't have target column
+    submit_df = test_data.copy()
+    submit_df = submit_df["time"]
     X_test = test_data.drop(columns=['time'], errors='ignore')
     
     # Clean target variables - remove NaN values if any
@@ -152,10 +154,11 @@ def main():
     
     # Save test predictions
     predictions_path = Path(config['data_path']['submits']) /  f'{model_name}.csv'
-    predictions_df = pd.DataFrame({
-        'prediction': test_predictions
+    submit_df = pd.DataFrame({
+        'time': submit_df,
+        'target': test_predictions
     })
-    predictions_df.to_csv(predictions_path, index=False)
+    submit_df.to_csv(predictions_path, index=False, header=False)
     print(f"Test predictions saved to {predictions_path}")
     
     if model.best_iteration:
