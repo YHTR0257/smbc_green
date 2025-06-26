@@ -3,6 +3,13 @@ import numpy as np
 import os
 import warnings
 from pathlib import Path
+import sys
+import logging
+from datetime import datetime, timedelta
+
+# Add config directory to path
+sys.path.append(str(Path(__file__).parent.parent / "config"))
+from config_loader import ConfigLoader
 
 def load_data(file_path)-> pd.DataFrame:
     """Load data from a specified file path."""
@@ -20,20 +27,24 @@ def cal_discomfort(df: pd.DataFrame):
         temp_col = f"{area}_temp"
         humidity_col = f"{area}_humidity"
         temp_max_col = f"{area}_temp_max"
+        temp_min_col = f"{area}_temp_min"
         rain_col = f"{area}_rain"
+
+        # Change temp celcius to kelvin
+        if temp_col in df.columns:
+            df[temp_col] = df[temp_col] + 273.15
+        if temp_max_col in df.columns:
+            df[temp_max_col] = df[temp_max_col] + 273.15
+        if temp_min_col in df.columns:
+            df[temp_min_col] = df[temp_min_col] + 273.15
         
         # Only calculate if required columns exist
         if temp_col in df.columns and humidity_col in df.columns:
             df[f"{area}_discomfort1"] = df[temp_col] * 0.81 + df[humidity_col] * 0.01 * (0.99 * df[temp_col] - 14.3) + 46.3
-            
         if temp_max_col in df.columns and humidity_col in df.columns and rain_col in df.columns:
-            df[f"{area}_discomfort2"] = df[temp_max_col] * 0.82 + df[humidity_col] * (0.98 * df[temp_max_col] - 14.4) * df[rain_col]
-    
-    if 'temperature' in df.columns and 'humidity' in df.columns:
-        df['discomfort'] = 0.81 * df['temperature'] + 0.01 * df['humidity'] * (0.99 * df['temperature'] - 14.3) + 46.3
-    else:
-        warnings.warn("Columns 'temperature' and 'humidity' are required for discomfort calculation.")
-        df['discomfort'] = np.nan
+            df[f"{area}_discomfort2"] = df[temp_max_col] * 0.82 + df[humidity_col] * (0.99 * df[temp_max_col] - 14.3) + 46.3
+        if temp_min_col in df.columns and humidity_col in df.columns:
+            df[f"{area}_discomfort3"] = df[temp_min_col] * 0.82 + df[humidity_col] * (0.99 * df[temp_min_col] - 14.3) + 46.3
     return df
 
 def cal_gene_sum(df: pd.DataFrame):
@@ -155,16 +166,319 @@ def time_based_split(data, config):
 class DataProcessor:
     """Class for handling data processing tasks."""
     
-    def __init__(self, train_file_path:Path, test_file_path:Path, config:dict):
+    def __init__(self, train_file_path:Path, test_file_path:Path, config:dict, fes_config:dict=None):
         self.train_data = load_data(train_file_path)
         self.test_data = load_data(test_file_path)
         self.config = config
+        self.fes_config = fes_config if fes_config else {}
         
-        # Processed data attributes
-        self.train_df = None
-        self.val_df = None
-        self.test_df = None
+        # Initialize config loader for festival and holiday data
+        self.config_loader = ConfigLoader()
+        
+        # Load configuration data
+        try:
+            self.cities_config = self.config_loader.get_cities_config()
+            self.feature_config = self.config_loader.get_feature_engineering_config()
+            self.population_admin = self.config_loader.get_population_config("admin")  
+            self.population_metro = self.config_loader.get_population_config("metro")
+            
+            # Set population type based on config
+            self.population_type = config.get('population_type', 'admin')
+            self.population_weights = self.population_admin if self.population_type == 'admin' else self.population_metro
+            
+            logging.info(f"DataProcessor initialized with population type: {self.population_type}")
+            
+        except Exception as e:
+            logging.warning(f"Failed to load configuration: {e}")
+            self.cities_config = {}
+            self.feature_config = {}
+            self.population_weights = {}
     
+    def cal_discomfort(self):
+        """Calculate discomfort index based on temperature and humidity."""
+        areas = ["bilbao", "barcelona", "seville", "madrid", "valencia"]
+        for df in [self.train_data, self.test_data]:
+            for area in areas:
+                temp_col = f"{area}_temp"
+                humidity_col = f"{area}_humidity"
+                temp_max_col = f"{area}_temp_max"
+                temp_min_col = f"{area}_temp_min"
+                rain_col = f"{area}_rain"
+
+                # Change temp celcius to kelvin
+                if temp_col in df.columns:
+                    df[temp_col] = df[temp_col] + 273.15
+                if temp_max_col in df.columns:
+                    df[temp_max_col] = df[temp_max_col] + 273.15
+                if temp_min_col in df.columns:
+                    df[temp_min_col] = df[temp_min_col] + 273.15
+                
+                # Only calculate if required columns exist
+                if temp_col in df.columns and humidity_col in df.columns:
+                    df[f"{area}_discomfort1"] = df[temp_col] * 0.81 + df[humidity_col] * 0.01 * (0.99 * df[temp_col] - 14.3) + 46.3
+                if temp_max_col in df.columns and humidity_col in df.columns and rain_col in df.columns:
+                    df[f"{area}_discomfort2"] = df[temp_max_col] * 0.82 + df[humidity_col] * (0.99 * df[temp_max_col] - 14.3) + 46.3
+                if temp_min_col in df.columns and humidity_col in df.columns:
+                    df[f"{area}_discomfort3"] = df[temp_min_col] * 0.82 + df[humidity_col] * (0.99 * df[temp_min_col] - 14.3) + 46.3
+                if temp_min_col in df.columns and temp_max_col in df.columns:
+                    df[f"{area}_diff_temp"] = df[temp_max_col] - df[temp_min_col]
+
+    def cal_gene_sum(self):
+        """Calculate the sum of gene expression levels."""
+        for df in [self.train_data, self.test_data]:
+            # Identify gene columns and calculate their sum
+            gene_cols = [col for col in df.columns if 'gene' in col]
+            df['gene_sum'] = df[gene_cols].sum(axis=1)
+
+    def create_festival_calendar(self):
+        _combined_df = pd.concat([self.train_data, self.test_data], ignore_index=True)
+        split_index = len(self.train_data)
+        cities = ["bilbao", "barcelona", "seville", "madrid", "valencia"]
+        for city in cities:
+            _combined_df = self.add_city_festivals(_combined_df, city)
+        
+        self.train_data = _combined_df.iloc[:split_index].reset_index(drop=True)
+        self.test_data = _combined_df.iloc[split_index:].reset_index(drop=True)
+
+
+    def add_city_festivals(self, df:pd.DataFrame, city:str, years:list = [2015, 2016, 2017, 2018]):
+        """Add city festival information to the datasets.
+        
+        Args:
+            df: DataFrame to add festival features to
+            city: Name of the city to add festivals for
+            years: List of years to process
+            
+        Returns:
+            DataFrame with festival features added
+        """
+        if 'time' not in df.columns:
+            logging.warning("Time column not found, skipping festival features")
+            return df
+            
+        # Ensure time column is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df['time']):
+            df['time'] = pd.to_datetime(df['time'], utc=True)
+        
+        # Capitalize city name to match config
+        city_cap = city.capitalize()
+        if city_cap == 'Seville':
+            city_cap = 'Sevilla'
+            
+        # Get scale impact weights from config
+        scale_impact = self.feature_config.get('scale_impact', {'small': 0.1, 'medium': 0.3, 'large': 0.6})
+        time_effects = self.feature_config.get('time_effects', {
+            'preparation_days_before': 3,
+            'aftermath_days_after': 2
+        })
+        
+        for year in years:
+            try:
+                # Get festival data for this year
+                festivals_data = self.config_loader.get_festivals_config(year)
+                
+                for festival_name, festival_info in festivals_data.items():
+                    # Check if this city is involved in the festival
+                    primary_cities = festival_info.get('primary_cities', [])
+                    if city_cap not in primary_cities:
+                        continue
+                        
+                    # Parse festival dates
+                    start_date = pd.to_datetime(festival_info['start_date']).date()
+                    end_date = pd.to_datetime(festival_info['end_date']).date()
+                    scale = festival_info.get('scale', 'medium')
+                    outdoor_rate = festival_info.get('outdoor_rate', 0.5)
+                    
+                    # Create date masks for this year
+                    year_mask = df['time'].dt.year == year
+                    date_mask = (df['time'].dt.date >= start_date) & (df['time'].dt.date <= end_date)
+                    
+                    # Festival period features
+                    festival_col = f"{city}_{festival_name}_active"
+                    if festival_col not in df.columns:
+                        df[festival_col] = 0
+                    df.loc[year_mask & date_mask, festival_col] = 1
+                    
+                    # Festival scale weight
+                    scale_col = f"{city}_{festival_name}_scale_weight"
+                    if scale_col not in df.columns:
+                        df[scale_col] = 0.0
+                    df.loc[year_mask & date_mask, scale_col] = scale_impact.get(scale, 0.3)
+                    
+                    # Outdoor rate (for weather interaction)
+                    outdoor_col = f"{city}_{festival_name}_outdoor_rate"
+                    if outdoor_col not in df.columns:
+                        df[outdoor_col] = 0.0
+                    df.loc[year_mask & date_mask, outdoor_col] = outdoor_rate
+                    
+                    # Preparation period
+                    prep_days = time_effects.get('preparation_days_before', 3)
+                    prep_start = start_date - timedelta(days=prep_days)
+                    prep_mask = (df['time'].dt.date >= prep_start) & (df['time'].dt.date < start_date)
+                    
+                    prep_col = f"{city}_{festival_name}_preparation"
+                    if prep_col not in df.columns:
+                        df[prep_col] = 0
+                    df.loc[year_mask & prep_mask, prep_col] = 1
+                    
+                    # Aftermath period
+                    aftermath_days = time_effects.get('aftermath_days_after', 2)
+                    aftermath_end = end_date + timedelta(days=aftermath_days)
+                    aftermath_mask = (df['time'].dt.date > end_date) & (df['time'].dt.date <= aftermath_end)
+                    
+                    aftermath_col = f"{city}_{festival_name}_aftermath"
+                    if aftermath_col not in df.columns:
+                        df[aftermath_col] = 0
+                    df.loc[year_mask & aftermath_mask, aftermath_col] = 1
+                    
+            except Exception as e:
+                logging.warning(f"Failed to add festival data for {city} in {year}: {e}")
+                
+        return df
+
+    def time_handling(self):
+        """Handle time column in the datasets."""
+        # Ensure time column exists
+        if 'time' not in self.train_data.columns or 'time' not in self.test_data.columns:
+            raise ValueError("Time column 'time' is missing from the datasets")
+
+        # Convert time column to datetime if it's not already
+        for df in [self.train_data, self.test_data]:
+            if not pd.api.types.is_datetime64_any_dtype(df['time']):
+                df['time'] = pd.to_datetime(df['time'], utc=True)
+                df['year'] = df['time'].dt.year
+                df['month'] = df['time'].dt.month
+                df['day'] = df['time'].dt.day
+                df['day_of_week'] = df['time'].dt.dayofweek
+                df['hour'] = df['time'].dt.hour
+    
+    def add_holiday_features(self):
+        """Add national holiday features to both datasets."""
+        for df in [self.train_data, self.test_data]:
+            if 'time' not in df.columns:
+                continue
+                
+            # Ensure time column is datetime
+            if not pd.api.types.is_datetime64_any_dtype(df['time']):
+                df['time'] = pd.to_datetime(df['time'], utc=True)
+            
+            # Initialize holiday columns
+            df['is_national_holiday'] = 0
+            df['holiday_name'] = ''
+            
+            # Add holiday data for each year
+            for year in range(2015, 2019):
+                try:
+                    holidays = self.config_loader.get_holidays_config(year)
+                    year_mask = df['time'].dt.year == year
+                    
+                    for date_str, holiday_name in holidays.items():
+                        holiday_date = pd.to_datetime(date_str).date()
+                        date_mask = df['time'].dt.date == holiday_date
+                        combined_mask = year_mask & date_mask
+                        
+                        df.loc[combined_mask, 'is_national_holiday'] = 1
+                        df.loc[combined_mask, 'holiday_name'] = holiday_name
+                        
+                except Exception as e:
+                    logging.warning(f"Failed to add holiday data for {year}: {e}")
+
+    def add_population_features(self):
+        """Add population-weighted features to both datasets."""
+        for df in [self.train_data, self.test_data]:
+            # Get population totals
+            total_pop = sum(self.population_weights.values())
+            
+            # Add normalized population weights for each city
+            for city, population in self.population_weights.items():
+                city_lower = city.lower()
+                if city_lower == 'sevilla':
+                    city_lower = 'seville'
+                    
+                # Normalized population weight
+                df[f'{city_lower}_population_weight'] = population / total_pop
+                df[f'{city_lower}_population_raw'] = population
+                
+            # Add population type info
+            df['population_type'] = self.population_type
+            df['total_population'] = total_pop
+
+    def add_basic_interactions(self):
+        """Add basic interaction features between holidays, festivals, and time."""
+        interactions_config = self.feature_config.get('interactions', {})
+        holiday_amplification = interactions_config.get('holiday_amplification_factor', 1.5)
+        rain_threshold = interactions_config.get('rain_threshold_mm', 5.0)
+        indoor_displacement = interactions_config.get('indoor_displacement_rate', 0.3)
+        
+        for df in [self.train_data, self.test_data]:
+            if 'time' not in df.columns:
+                continue
+                
+            # Weekend/weekday flags
+            if 'day_of_week' in df.columns:
+                df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
+                df['is_weekday'] = (df['day_of_week'] < 5).astype(int)
+            
+            # Holiday-Festival amplification
+            if 'is_national_holiday' in df.columns:
+                holiday_cols = [col for col in df.columns if '_active' in col and any(city in col for city in ['madrid', 'barcelona', 'valencia', 'seville', 'bilbao'])]
+                
+                for festival_col in holiday_cols:
+                    city = festival_col.split('_')[0]
+                    amplified_col = f'{festival_col}_holiday_amplified'
+                    df[amplified_col] = df[festival_col] * df['is_national_holiday'] * holiday_amplification
+                    
+                    # Population weighted effect
+                    if f'{city}_population_weight' in df.columns:
+                        pop_weighted_col = f'{festival_col}_pop_weighted'
+                        df[pop_weighted_col] = df[festival_col] * df[f'{city}_population_weight']
+            
+            # Weather-Festival interactions (if weather data is available)
+            for city in ['madrid', 'barcelona', 'valencia', 'seville', 'bilbao']:
+                rain_col = f'{city}_rain'
+                if rain_col in df.columns:
+                    # Festival rain reduction effect
+                    festival_cols = [col for col in df.columns if f'{city}_' in col and '_active' in col]
+                    outdoor_cols = [col for col in df.columns if f'{city}_' in col and '_outdoor_rate' in col]
+                    
+                    for fest_col, outdoor_col in zip(festival_cols, outdoor_cols):
+                        if outdoor_col in df.columns:
+                            rain_reduction_col = f'{fest_col}_rain_reduction'
+                            df[rain_reduction_col] = (
+                                df[fest_col] * 
+                                df[outdoor_col] * 
+                                np.clip(df[rain_col] / rain_threshold, 0, 1)
+                            )
+                            
+                            # Indoor displacement effect
+                            indoor_displacement_col = f'{fest_col}_indoor_displacement'
+                            df[indoor_displacement_col] = df[rain_reduction_col] * indoor_displacement
+            
+            # Time-of-day festival effects
+            if 'hour' in df.columns:
+                # Evening festival effect (19-23時)
+                df['is_evening'] = ((df['hour'] >= 19) & (df['hour'] <= 23)).astype(int)
+                
+                festival_cols = [col for col in df.columns if '_active' in col]
+                for festival_col in festival_cols:
+                    evening_effect_col = f'{festival_col}_evening_effect'
+                    df[evening_effect_col] = df[festival_col] * df['is_evening']
+
+    def missing_value_handling(self):
+        """Handle missing values in the datasets."""
+        # Fill missing values with 0 for numeric columns
+        numeric_cols = self.train_data.select_dtypes(include=['number']).columns.tolist()
+        self.train_data[numeric_cols] = self.train_data[numeric_cols].fillna(0)
+        self.test_data[numeric_cols] = self.test_data[numeric_cols].fillna(0)
+
+        # For categorical columns, fill with 'unknown' or similar placeholder
+        categorical_cols = self.train_data.select_dtypes(include=['object']).columns.tolist()
+        for col in categorical_cols:
+            if col in self.train_data.columns:
+                self.train_data[col] = self.train_data[col].fillna('unknown')
+            if col in self.test_data.columns:
+                self.test_data[col] = self.test_data[col].fillna('unknown')
+
     def process_all(self):
         """Process data and return train, validation, and test datasets.
         
@@ -172,6 +486,26 @@ class DataProcessor:
             tuple: (train_data, val_data, test_data)
         """
         general_config = self.config.get('train_config', {}).get('general', {})
+
+        # date, daytime, and time column handling
+        self.time_handling()
+        
+        # Add population-weighted features
+        self.add_population_features()
+        
+        # Add holiday features
+        self.add_holiday_features()
+        
+        # festival calendar creation
+        self.create_festival_calendar()
+        
+        # Add basic interaction features
+        self.add_basic_interactions()
+
+        # 欠損値の処理
+        self.missing_value_handling()
+
+
         
         # Drop specified columns from both datasets
         drop_columns = general_config.get('drop_columns', [])
@@ -202,9 +536,8 @@ class DataProcessor:
         test_data_clean = test_data_clean.drop(columns=weather_text_cols, errors='ignore')
         
         # Calculate discomfort indices
-        train_features_split = cal_discomfort(train_features_split)
-        val_features_split = cal_discomfort(val_features_split)
-        test_data_clean = cal_discomfort(test_data_clean)
+        self.cal_discomfort()
+        self.cal_gene_sum()
         
         # Get numeric columns for scaling
         scale_cols = train_features_split.select_dtypes(include=['number']).columns.tolist()
@@ -251,11 +584,6 @@ class DataProcessor:
         train_processed = pd.concat([train_features_split] + train_scaled_cols, axis=1)
         val_processed = pd.concat([val_features_split] + val_scaled_cols, axis=1)
         test_processed = pd.concat([test_data_clean] + test_scaled_cols, axis=1)
-        
-        # Fill any remaining NaN values
-        train_processed = train_processed.fillna(0)
-        val_processed = val_processed.fillna(0)
-        test_processed = test_processed.fillna(0)
         
         # Add target back to train and val
         self.train_df = pd.concat([train_processed, train_target_split], axis=1)

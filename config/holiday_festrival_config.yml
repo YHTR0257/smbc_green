@@ -1,0 +1,269 @@
+# スペイン電力価格予測用 休日・祭典・都市情報設定ファイル (2015-2018)
+
+# 都市座標情報
+cities:
+  coordinates:
+    Madrid: [40.4168, -3.7033]
+    Barcelona: [41.3851, 2.1686]
+    Valencia: [39.4699, -0.3756]
+    Sevilla: [37.3891, -5.9845]
+    Bilbao: [43.2627, -2.9253]
+
+# 人口重み付け設定 (2015-2018年期間の概算値)
+population_weights:
+  # パターンA: 行政区域人口ベース
+  admin_population:
+    Madrid: 3200000     # 約320万人
+    Barcelona: 1600000  # 約160万人  
+    Valencia: 790000    # 約79万人
+    Sevilla: 690000     # 約69万人
+    Bilbao: 352000      # 約35.2万人（2015-2018年実績）
+    
+  # パターンB: 都市圏人口ベース
+  metro_population:
+    Madrid: 6500000     # マドリード都市圏約650万人
+    Barcelona: 5200000  # バルセロナ都市圏約520万人
+    Valencia: 1700000   # バレンシア都市圏約170万人
+    Sevilla: 1400000    # セビリア都市圏約140万人
+    Bilbao: 950000      # ビルバオ都市圏約95万人
+
+# スペイン国民の祝日 (2015-2018)
+national_holidays:
+  2015:
+    "2015-01-01": "New Year's Day"
+    "2015-01-06": "Epiphany (Three Kings Day)"
+    "2015-04-03": "Good Friday"
+    "2015-05-01": "Labor Day"
+    "2015-08-15": "Assumption of Mary"
+    "2015-10-12": "Hispanic Day (National Day)"
+    "2015-11-01": "All Saints Day"
+    "2015-12-06": "Constitution Day"
+    "2015-12-08": "Immaculate Conception"
+    "2015-12-25": "Christmas Day"
+    
+  2016:
+    "2016-01-01": "New Year's Day"
+    "2016-01-06": "Epiphany (Three Kings Day)"
+    "2016-03-25": "Good Friday"
+    "2016-05-01": "Labor Day"
+    "2016-08-15": "Assumption of Mary"
+    "2016-10-12": "Hispanic Day (National Day)"
+    "2016-11-01": "All Saints Day"
+    "2016-12-06": "Constitution Day"
+    "2016-12-08": "Immaculate Conception"
+    "2016-12-25": "Christmas Day"
+    
+  2017:
+    "2017-01-01": "New Year's Day"
+    "2017-01-06": "Epiphany (Three Kings Day)"
+    "2017-04-14": "Good Friday"
+    "2017-05-01": "Labor Day"
+    "2017-08-15": "Assumption of Mary"
+    "2017-10-12": "Hispanic Day (National Day)"
+    "2017-11-01": "All Saints Day"
+    "2017-12-06": "Constitution Day"
+    "2017-12-08": "Immaculate Conception"
+    "2017-12-25": "Christmas Day"
+    
+  2018:
+    "2018-01-01": "New Year's Day"
+    "2018-01-06": "Epiphany (Three Kings Day)"
+    "2018-03-30": "Good Friday"
+    "2018-05-01": "Labor Day"
+    "2018-08-15": "Assumption of Mary"
+    "2018-10-12": "Hispanic Day (National Day)"
+    "2018-11-01": "All Saints Day"
+    "2018-12-06": "Constitution Day"
+    "2018-12-08": "Immaculate Conception"
+    "2018-12-25": "Christmas Day"
+
+# 主要祭典情報 (2015-2018)
+festivals:
+  # セマナサンタ (聖週間) - 年によってイースターの日程が変動
+  semana_santa:
+    2015:
+      start_date: "2015-03-29"  # Palm Sunday
+      end_date: "2015-04-05"    # Easter Sunday
+      primary_cities: ["Sevilla", "Valencia"]
+      scale: "large"
+      outdoor_rate: 0.7
+      
+    2016:
+      start_date: "2016-03-20"
+      end_date: "2016-03-27"
+      primary_cities: ["Sevilla", "Valencia"]
+      scale: "large"
+      outdoor_rate: 0.7
+      
+    2017:
+      start_date: "2017-04-09"
+      end_date: "2017-04-16"
+      primary_cities: ["Sevilla", "Valencia"]
+      scale: "large"
+      outdoor_rate: 0.7
+      
+    2018:
+      start_date: "2018-03-25"
+      end_date: "2018-04-01"
+      primary_cities: ["Sevilla", "Valencia"]
+      scale: "large"
+      outdoor_rate: 0.7
+
+  # フェリア・デ・アブリル (セビリアの春祭り)
+  feria_abril:
+    2015:
+      start_date: "2015-04-21"
+      end_date: "2015-04-26"
+      primary_cities: ["Sevilla"]
+      scale: "medium"
+      outdoor_rate: 0.8
+      
+    2016:
+      start_date: "2016-04-12"
+      end_date: "2016-04-17"
+      primary_cities: ["Sevilla"]
+      scale: "medium"
+      outdoor_rate: 0.8
+      
+    2017:
+      start_date: "2017-05-02"
+      end_date: "2017-05-07"
+      primary_cities: ["Sevilla"]
+      scale: "medium"
+      outdoor_rate: 0.8
+      
+    2018:
+      start_date: "2018-04-17"
+      end_date: "2018-04-22"
+      primary_cities: ["Sevilla"]
+      scale: "medium"
+      outdoor_rate: 0.8
+
+  # サン・フェルミン祭 (パンプローナの牛追い祭り)
+  san_fermin:
+    2015:
+      start_date: "2015-07-06"
+      end_date: "2015-07-14"
+      primary_cities: ["Bilbao"]  # バスク地方代表
+      scale: "medium"
+      outdoor_rate: 0.9
+      
+    2016:
+      start_date: "2016-07-06"
+      end_date: "2016-07-14"
+      primary_cities: ["Bilbao"]
+      scale: "medium"
+      outdoor_rate: 0.9
+      
+    2017:
+      start_date: "2017-07-06"
+      end_date: "2017-07-14"
+      primary_cities: ["Bilbao"]
+      scale: "medium"
+      outdoor_rate: 0.9
+      
+    2018:
+      start_date: "2018-07-06"
+      end_date: "2018-07-14"
+      primary_cities: ["Bilbao"]
+      scale: "medium"
+      outdoor_rate: 0.9
+
+  # ラ・トマティーナ (トマト祭り)
+  la_tomatina:
+    2015:
+      start_date: "2015-08-26"
+      end_date: "2015-08-26"
+      primary_cities: ["Valencia"]
+      scale: "small"
+      outdoor_rate: 1.0
+      
+    2016:
+      start_date: "2016-08-31"
+      end_date: "2016-08-31"
+      primary_cities: ["Valencia"]
+      scale: "small"
+      outdoor_rate: 1.0
+      
+    2017:
+      start_date: "2017-08-30"
+      end_date: "2017-08-30"
+      primary_cities: ["Valencia"]
+      scale: "small"
+      outdoor_rate: 1.0
+      
+    2018:
+      start_date: "2018-08-29"
+      end_date: "2018-08-29"
+      primary_cities: ["Valencia"]
+      scale: "small"
+      outdoor_rate: 1.0
+
+  # レジェス・マゴス (三賢者の日) パレード前夜祭
+  reyes_magos_parade:
+    2015:
+      start_date: "2015-01-05"
+      end_date: "2015-01-05"
+      primary_cities: ["Madrid", "Barcelona", "Valencia", "Sevilla", "Bilbao"]
+      scale: "large"
+      outdoor_rate: 0.6
+      
+    2016:
+      start_date: "2016-01-05"
+      end_date: "2016-01-05"
+      primary_cities: ["Madrid", "Barcelona", "Valencia", "Sevilla", "Bilbao"]
+      scale: "large"
+      outdoor_rate: 0.6
+      
+    2017:
+      start_date: "2017-01-05"
+      end_date: "2017-01-05"
+      primary_cities: ["Madrid", "Barcelona", "Valencia", "Sevilla", "Bilbao"]
+      scale: "large"
+      outdoor_rate: 0.6
+      
+    2018:
+      start_date: "2018-01-05"
+      end_date: "2018-01-05"
+      primary_cities: ["Madrid", "Barcelona", "Valencia", "Sevilla", "Bilbao"]
+      scale: "large"
+      outdoor_rate: 0.6
+
+# 特徴量生成設定
+feature_engineering:
+  # 距離減衰パラメータ
+  distance_decay:
+    max_distance_km: 400  # この距離で影響ゼロ
+    half_effect_distance_km: 200  # この距離で効果50%
+    
+  # お祭り規模による基本影響度
+  scale_impact:
+    small: 0.1
+    medium: 0.3
+    large: 0.6
+    
+  # 時間帯別効果
+  time_effects:
+    preparation_days_before: 3  # 準備期間（日前）
+    aftermath_days_after: 2     # 後片付け期間（日後）
+    evening_start_hour: 19      # 夜間開始時刻
+    evening_end_hour: 23        # 夜間終了時刻
+    
+  # 相互作用項設定
+  interactions:
+    holiday_amplification_factor: 1.5  # 休日時の効果増幅
+    rain_threshold_mm: 5.0              # 降雨による屋外イベント縮小閾値
+    indoor_displacement_rate: 0.3       # 屋内転換率
+    weekday_afternoon_reduction: -0.2   # 平日午後の電力減少率
+    weekday_evening_increase: 0.3       # 平日夜間の電力増加率
+
+# LASSO特徴量選択設定
+feature_selection:
+  max_features: 15
+  cv_folds: 5
+  alpha_range:
+    min: 1e-4
+    max: 1.0
+    num_alphas: 50
+  multicollinearity_threshold: 30  # 条件数閾値
+  correlation_threshold: 0.8       # 高相関ペア検出閾値

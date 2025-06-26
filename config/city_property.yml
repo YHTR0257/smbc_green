@@ -1,0 +1,54 @@
+# ¹Ú¤óû›¡<ˆ,( ýú,Å1-šÕ¡¤ë
+
+# ý§Å1 (ï¦, L¦)
+cities:
+  coordinates:
+    Madrid: [40.4168, -3.7033]
+    Barcelona: [41.3851, 2.1686]
+    Valencia: [39.4699, -0.3756]
+    Sevilla: [37.3891, -5.9845]
+    Bilbao: [43.2627, -2.9253]
+
+# ºãÍØQ-š (2015-2018t“n‚—$)
+population_weights:
+  # Ñ¿üóA: L?:ßºãÙü¹
+  admin_population:
+    Madrid: 3200000     # 320º
+    Barcelona: 1600000  # 160º  
+    Valencia: 790000    # 79º
+    Sevilla: 690000     # 69º
+    Bilbao: 352000      # 35.2º
+    
+  # Ñ¿üóB: ýºãÙü¹
+  metro_population:
+    Madrid: 6500000     # ÞÉêüÉý650º
+    Barcelona: 5200000  # Ðë»íÊý520º
+    Valencia: 1700000   # Ðìó·¢ý170º
+    Sevilla: 1400000    # »Óê¢ý140º
+    Bilbao: 950000      # ÓëÐªý95º
+
+# y´Ï-š
+feature_engineering:
+  # ÝâpÑéáü¿
+  distance_decay:
+    max_distance_km: 400  # SnÝâgqÿ¼í
+    half_effect_distance_km: 200  # SnÝâg¹œ50%
+    
+  # ø’\(-š
+  interactions:
+    holiday_amplification_factor: 1.5  # åBn¹œ—E
+    rain_threshold_mm: 5.0              # Mèkˆ‹K¤ÙóÈ.¾$
+    indoor_displacement_rate: 0.3       # K…âÛ‡
+    weekday_afternoon_reduction: -0.2   # såHŒnû›‡
+    weekday_evening_increase: 0.3       # så“nû›— ‡
+
+# LASSOy´Ïxž-š
+feature_selection:
+  max_features: 15
+  cv_folds: 5
+  alpha_range:
+    min: 1e-4
+    max: 1.0
+    num_alphas: 50
+  multicollinearity_threshold: 30  # aöp¾$
+  correlation_threshold: 0.8       # Øø¢Ú¢ú¾$
