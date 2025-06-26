@@ -1,6 +1,6 @@
-# ¹Ú¤óû›¡<ˆ,( ýú,Å1-šÕ¡¤ë
+# Spanish electricity price prediction - City configuration
 
-# ý§Å1 (ï¦, L¦)
+# City coordinates (latitude, longitude)
 cities:
   coordinates:
     Madrid: [40.4168, -3.7033]
@@ -9,40 +9,40 @@ cities:
     Sevilla: [37.3891, -5.9845]
     Bilbao: [43.2627, -2.9253]
 
-# ºãÍØQ-š (2015-2018t“n‚—$)
+# Population weights (2015-2018 period estimates)
 population_weights:
-  # Ñ¿üóA: L?:ßºãÙü¹
+  # Pattern A: Administrative area population base
   admin_population:
-    Madrid: 3200000     # 320º
-    Barcelona: 1600000  # 160º  
-    Valencia: 790000    # 79º
-    Sevilla: 690000     # 69º
-    Bilbao: 352000      # 35.2º
+    Madrid: 3200000     # Approx 3.2M people
+    Barcelona: 1600000  # Approx 1.6M people  
+    Valencia: 790000    # Approx 790K people
+    Sevilla: 690000     # Approx 690K people
+    Bilbao: 352000      # Approx 352K people
     
-  # Ñ¿üóB: ýºãÙü¹
+  # Pattern B: Metropolitan area population base
   metro_population:
-    Madrid: 6500000     # ÞÉêüÉý650º
-    Barcelona: 5200000  # Ðë»íÊý520º
-    Valencia: 1700000   # Ðìó·¢ý170º
-    Sevilla: 1400000    # »Óê¢ý140º
-    Bilbao: 950000      # ÓëÐªý95º
+    Madrid: 6500000     # Madrid metro area approx 6.5M people
+    Barcelona: 5200000  # Barcelona metro area approx 5.2M people
+    Valencia: 1700000   # Valencia metro area approx 1.7M people
+    Sevilla: 1400000    # Sevilla metro area approx 1.4M people
+    Bilbao: 950000      # Bilbao metro area approx 950K people
 
-# y´Ï-š
+# Feature engineering configuration
 feature_engineering:
-  # ÝâpÑéáü¿
+  # Distance decay parameters
   distance_decay:
-    max_distance_km: 400  # SnÝâgqÿ¼í
-    half_effect_distance_km: 200  # SnÝâg¹œ50%
+    max_distance_km: 400  # Zero influence at this distance
+    half_effect_distance_km: 200  # 50% effect at this distance
     
-  # ø’\(-š
+  # Interaction settings
   interactions:
-    holiday_amplification_factor: 1.5  # åBn¹œ—E
-    rain_threshold_mm: 5.0              # Mèkˆ‹K¤ÙóÈ.¾$
-    indoor_displacement_rate: 0.3       # K…âÛ‡
-    weekday_afternoon_reduction: -0.2   # såHŒnû›‡
-    weekday_evening_increase: 0.3       # så“nû›— ‡
+    holiday_amplification_factor: 1.5  # Effect amplification on holidays
+    rain_threshold_mm: 5.0              # Rain threshold for outdoor event reduction
+    indoor_displacement_rate: 0.3       # Indoor conversion rate
+    weekday_afternoon_reduction: -0.2   # Weekday afternoon power reduction rate
+    weekday_evening_increase: 0.3       # Weekday evening power increase rate
 
-# LASSOy´Ïxž-š
+# LASSO feature selection configuration
 feature_selection:
   max_features: 15
   cv_folds: 5
@@ -50,5 +50,5 @@ feature_selection:
     min: 1e-4
     max: 1.0
     num_alphas: 50
-  multicollinearity_threshold: 30  # aöp¾$
-  correlation_threshold: 0.8       # Øø¢Ú¢ú¾$
+  multicollinearity_threshold: 30  # Condition number threshold
+  correlation_threshold: 0.8       # High correlation pair detection threshold

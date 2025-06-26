@@ -1,5 +1,5 @@
 """
-スペイン電力価格予測用 設定管理システム
+Spanish electricity price prediction configuration management system
 Festival feature engineering configuration loader
 """
 
@@ -13,29 +13,29 @@ logger = logging.getLogger(__name__)
 
 
 class ConfigLoader:
-    """設定ファイルの読み込みと管理を行うクラス"""
+    """Class for loading and managing configuration files"""
     
     def __init__(self, config_dir: str = "config"):
         """
         Args:
-            config_dir: 設定ファイルのディレクトリパス
+            config_dir: Configuration files directory path
         """
         self.config_dir = Path(config_dir)
         self._cached_configs = {}
         
     def load_yaml_config(self, config_path: str) -> Dict[str, Any]:
         """
-        YAMLファイルを読み込み、辞書として返す
+        Load YAML file and return as dictionary
         
         Args:
-            config_path: 設定ファイルのパス
+            config_path: Configuration file path
             
         Returns:
-            読み込んだ設定の辞書
+            Dictionary of loaded configuration
             
         Raises:
-            FileNotFoundError: ファイルが見つからない場合
-            yaml.YAMLError: YAML解析エラーの場合
+            FileNotFoundError: When file is not found
+            yaml.YAMLError: When YAML parsing error occurs
         """
         if config_path in self._cached_configs:
             return self._cached_configs[config_path]
@@ -43,48 +43,48 @@ class ConfigLoader:
         file_path = self.config_dir / config_path
         
         if not file_path.exists():
-            raise FileNotFoundError(f"設定ファイルが見つかりません: {file_path}")
+            raise FileNotFoundError(f"Configuration file not found: {file_path}")
             
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
                 
             if config is None:
-                raise ValueError(f"設定ファイルが空です: {file_path}")
+                raise ValueError(f"Configuration file is empty: {file_path}")
                 
             self._cached_configs[config_path] = config
-            logger.info(f"設定ファイルを読み込みました: {file_path}")
+            logger.info(f"Configuration file loaded: {file_path}")
             return config
             
         except yaml.YAMLError as e:
-            raise yaml.YAMLError(f"YAML解析エラー in {file_path}: {e}")
+            raise yaml.YAMLError(f"YAML parsing error in {file_path}: {e}")
     
     def get_cities_config(self) -> Dict[str, Any]:
         """
-        都市情報の設定を取得
+        Get city configuration
         
         Returns:
-            都市座標と基本情報の辞書
+            Dictionary of city coordinates and basic information
         """
         config = self.load_yaml_config("city_property.yml")
         
         if "cities" not in config:
-            raise KeyError("cities設定が見つかりません")
+            raise KeyError("Cities configuration not found")
             
         cities_config = config["cities"]
         
-        # バリデーション
+        # Validation
         if "coordinates" not in cities_config:
-            raise KeyError("cities.coordinates設定が見つかりません")
+            raise KeyError("Cities coordinates configuration not found")
             
         coordinates = cities_config["coordinates"]
         expected_cities = ["Madrid", "Barcelona", "Valencia", "Sevilla", "Bilbao"]
         
         for city in expected_cities:
             if city not in coordinates:
-                raise KeyError(f"都市 {city} の座標が設定されていません")
+                raise KeyError(f"Coordinates for city {city} not configured")
             if not isinstance(coordinates[city], list) or len(coordinates[city]) != 2:
-                raise ValueError(f"都市 {city} の座標形式が不正です (緯度,経度のリストである必要があります)")
+                raise ValueError(f"Invalid coordinate format for city {city} (must be [latitude, longitude] list)")
                 
         return cities_config
     
@@ -119,7 +119,7 @@ class ConfigLoader:
         population_data = pop_config[key]
         expected_cities = ["Madrid", "Barcelona", "Valencia", "Sevilla", "Bilbao"]
         
-        # バリデーション
+        # Validation
         for city in expected_cities:
             if city not in population_data:
                 raise KeyError(f"都市 {city} の人口データが設定されていません")
@@ -148,17 +148,17 @@ class ConfigLoader:
         config = self.load_yaml_config("holiday_festrival_config.yml")
         
         if "national_holidays" not in config:
-            raise KeyError("national_holidays設定が見つかりません")
+            raise KeyError("National holidays configuration not found")
             
         holidays_config = config["national_holidays"]
         year_key = str(year)
         
         if year_key not in holidays_config:
-            raise KeyError(f"{year}年の祝日設定が見つかりません")
+            raise KeyError(f"Holiday configuration for year {year} not found")
             
         year_holidays = holidays_config[year_key]
         
-        # バリデーション
+        # Validation
         for date_str, holiday_name in year_holidays.items():
             try:
                 # 日付形式の簡単なチェック
@@ -189,7 +189,7 @@ class ConfigLoader:
         config = self.load_yaml_config("holiday_festrival_config.yml")
         
         if "festivals" not in config:
-            raise KeyError("festivals設定が見つかりません")
+            raise KeyError("Festivals configuration not found")
             
         festivals_config = config["festivals"]
         year_key = str(year)
@@ -197,12 +197,12 @@ class ConfigLoader:
         result = {}
         for festival_name, festival_data in festivals_config.items():
             if year_key not in festival_data:
-                logger.warning(f"祭典 {festival_name} の {year}年データが見つかりません")
+                logger.warning(f"Festival {festival_name} data not found for year {year}")
                 continue
                 
             festival_year_data = festival_data[year_key]
             
-            # バリデーション
+            # Validation
             required_fields = ["start_date", "end_date", "primary_cities", "scale", "outdoor_rate"]
             for field in required_fields:
                 if field not in festival_year_data:

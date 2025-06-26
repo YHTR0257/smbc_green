@@ -5,11 +5,11 @@ import warnings
 from pathlib import Path
 import sys
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Add config directory to path
-sys.path.append(str(Path(__file__).parent.parent / "config"))
-from config_loader import ConfigLoader
+sys.path.append(str(Path(__file__).parent.parent))
+from config.config_loader import ConfigLoader
 
 def load_data(file_path)-> pd.DataFrame:
     """Load data from a specified file path."""
@@ -70,12 +70,14 @@ def preprocess_data(test_df: pd.DataFrame, train_df: pd.DataFrame):
     
     # Get numeric columns for scaling
     scale_cols = test_df.select_dtypes(include=['number']).columns.tolist()
-    test_scaled_cols = []
-    train_scaled_cols = []
 
     # Discomfort cols
     train_df = cal_discomfort(train_df)
     test_df = cal_discomfort(test_df)
+    
+    # Prepare dictionaries to collect all scaled columns at once
+    test_scaled_dict = {}
+    train_scaled_dict = {}
     
     for col in scale_cols:
         if col in train_df.columns:
@@ -91,19 +93,22 @@ def preprocess_data(test_df: pd.DataFrame, train_df: pd.DataFrame):
                 test_scaled = test_df[col] * 0  # Set to 0 if std is 0
                 train_scaled = train_df[col] * 0  # Set to 0 if std is 0
 
-            test_scaled_cols.append(pd.DataFrame({
-                f"{col}_mean_to_t": [mean_col] * len(test_df),
-                f"{col}_std_to_t": [std_col] * len(test_df),
-                f"{col}_scaled": test_scaled,
-            }, index=test_df.index))
-            train_scaled_cols.append(pd.DataFrame({
-                f"{col}_mean_to_t": [mean_col] * len(train_df),
-                f"{col}_std_to_t": [std_col] * len(train_df),
-                f"{col}_scaled": train_scaled,
-            }, index=train_df.index))
+            # Store all columns in dictionaries
+            test_scaled_dict[f"{col}_mean_to_t"] = [mean_col] * len(test_df)
+            test_scaled_dict[f"{col}_std_to_t"] = [std_col] * len(test_df)
+            test_scaled_dict[f"{col}_scaled"] = test_scaled
+            
+            train_scaled_dict[f"{col}_mean_to_t"] = [mean_col] * len(train_df)
+            train_scaled_dict[f"{col}_std_to_t"] = [std_col] * len(train_df)
+            train_scaled_dict[f"{col}_scaled"] = train_scaled
     
-    train_df = pd.concat([train_df] + train_scaled_cols, axis=1)
-    test_df = pd.concat([test_df] + test_scaled_cols, axis=1)
+    # Create single DataFrames with all scaled columns
+    if test_scaled_dict:  # Only if there are columns to add
+        test_scaled_df = pd.DataFrame(test_scaled_dict, index=test_df.index)
+        train_scaled_df = pd.DataFrame(train_scaled_dict, index=train_df.index)
+        
+        train_df = pd.concat([train_df, train_scaled_df], axis=1)
+        test_df = pd.concat([test_df, test_scaled_df], axis=1)
     
     # Fill any remaining NaN values
     train_df = train_df.fillna(0)
@@ -166,7 +171,7 @@ def time_based_split(data, config):
 class DataProcessor:
     """Class for handling data processing tasks."""
     
-    def __init__(self, train_file_path:Path, test_file_path:Path, config:dict, fes_config:dict=None):
+    def __init__(self, train_file_path:Path, test_file_path:Path, config:dict, fes_config:dict={}):
         self.train_data = load_data(train_file_path)
         self.test_data = load_data(test_file_path)
         self.config = config
@@ -198,6 +203,9 @@ class DataProcessor:
         """Calculate discomfort index based on temperature and humidity."""
         areas = ["bilbao", "barcelona", "seville", "madrid", "valencia"]
         for df in [self.train_data, self.test_data]:
+            # Collect all new columns to add at once
+            new_columns = {}
+            
             for area in areas:
                 temp_col = f"{area}_temp"
                 humidity_col = f"{area}_humidity"
@@ -205,7 +213,7 @@ class DataProcessor:
                 temp_min_col = f"{area}_temp_min"
                 rain_col = f"{area}_rain"
 
-                # Change temp celcius to kelvin
+                # Change temp celsius to kelvin (modify existing columns)
                 if temp_col in df.columns:
                     df[temp_col] = df[temp_col] + 273.15
                 if temp_max_col in df.columns:
@@ -213,22 +221,40 @@ class DataProcessor:
                 if temp_min_col in df.columns:
                     df[temp_min_col] = df[temp_min_col] + 273.15
                 
-                # Only calculate if required columns exist
+                # Calculate new columns and store in dictionary
                 if temp_col in df.columns and humidity_col in df.columns:
-                    df[f"{area}_discomfort1"] = df[temp_col] * 0.81 + df[humidity_col] * 0.01 * (0.99 * df[temp_col] - 14.3) + 46.3
+                    new_columns[f"{area}_discomfort1"] = df[temp_col] * 0.81 + df[humidity_col] * 0.01 * (0.99 * df[temp_col] - 14.3) + 46.3
+                
                 if temp_max_col in df.columns and humidity_col in df.columns and rain_col in df.columns:
-                    df[f"{area}_discomfort2"] = df[temp_max_col] * 0.82 + df[humidity_col] * (0.99 * df[temp_max_col] - 14.3) + 46.3
+                    new_columns[f"{area}_discomfort2"] = df[temp_max_col] * 0.82 + df[humidity_col] * (0.99 * df[temp_max_col] - 14.3) + 46.3
+                
                 if temp_min_col in df.columns and humidity_col in df.columns:
-                    df[f"{area}_discomfort3"] = df[temp_min_col] * 0.82 + df[humidity_col] * (0.99 * df[temp_min_col] - 14.3) + 46.3
+                    new_columns[f"{area}_discomfort3"] = df[temp_min_col] * 0.82 + df[humidity_col] * (0.99 * df[temp_min_col] - 14.3) + 46.3
+                
                 if temp_min_col in df.columns and temp_max_col in df.columns:
-                    df[f"{area}_diff_temp"] = df[temp_max_col] - df[temp_min_col]
+                    new_columns[f"{area}_diff_temp"] = df[temp_max_col] - df[temp_min_col]
+            
+            # Add all new columns at once if any were calculated
+            if new_columns:
+                new_df = pd.DataFrame(new_columns, index=df.index)
+                # Update the original dataframe reference
+                if df is self.train_data:
+                    self.train_data = pd.concat([df, new_df], axis=1)
+                else:
+                    self.test_data = pd.concat([df, new_df], axis=1)
 
     def cal_gene_sum(self):
         """Calculate the sum of gene expression levels."""
-        for df in [self.train_data, self.test_data]:
+        for i, df in enumerate([self.train_data, self.test_data]):
             # Identify gene columns and calculate their sum
             gene_cols = [col for col in df.columns if 'gene' in col]
-            df['gene_sum'] = df[gene_cols].sum(axis=1)
+            if gene_cols:  # Only add if gene columns exist
+                new_df = pd.DataFrame({'gene_sum': df[gene_cols].sum(axis=1)}, index=df.index)
+                # Update the original dataframe reference
+                if i == 0:  # train_data
+                    self.train_data = pd.concat([df, new_df], axis=1)
+                else:  # test_data
+                    self.test_data = pd.concat([df, new_df], axis=1)
 
     def create_festival_calendar(self):
         _combined_df = pd.concat([self.train_data, self.test_data], ignore_index=True)
@@ -243,6 +269,7 @@ class DataProcessor:
 
     def add_city_festivals(self, df:pd.DataFrame, city:str, years:list = [2015, 2016, 2017, 2018]):
         """Add city festival information to the datasets.
+        Focus on whether any festival is happening in the city, not individual festivals.
         
         Args:
             df: DataFrame to add festival features to
@@ -265,12 +292,20 @@ class DataProcessor:
         if city_cap == 'Seville':
             city_cap = 'Sevilla'
             
+        # Initialize city festival columns
+        festival_col = f"{city}_has_festival"
+        festival_intensity_col = f"{city}_festival_intensity"
+        outdoor_impact_col = f"{city}_festival_outdoor_impact"
+        
+        if festival_col not in df.columns:
+            df[festival_col] = 0
+        if festival_intensity_col not in df.columns:
+            df[festival_intensity_col] = 0.0
+        if outdoor_impact_col not in df.columns:
+            df[outdoor_impact_col] = 0.0
+            
         # Get scale impact weights from config
         scale_impact = self.feature_config.get('scale_impact', {'small': 0.1, 'medium': 0.3, 'large': 0.6})
-        time_effects = self.feature_config.get('time_effects', {
-            'preparation_days_before': 3,
-            'aftermath_days_after': 2
-        })
         
         for year in years:
             try:
@@ -292,44 +327,26 @@ class DataProcessor:
                     # Create date masks for this year
                     year_mask = df['time'].dt.year == year
                     date_mask = (df['time'].dt.date >= start_date) & (df['time'].dt.date <= end_date)
+                    combined_mask = year_mask & date_mask
                     
-                    # Festival period features
-                    festival_col = f"{city}_{festival_name}_active"
-                    if festival_col not in df.columns:
-                        df[festival_col] = 0
-                    df.loc[year_mask & date_mask, festival_col] = 1
+                    # Mark that city has festival during this period
+                    df.loc[combined_mask, festival_col] = 1
                     
-                    # Festival scale weight
-                    scale_col = f"{city}_{festival_name}_scale_weight"
-                    if scale_col not in df.columns:
-                        df[scale_col] = 0.0
-                    df.loc[year_mask & date_mask, scale_col] = scale_impact.get(scale, 0.3)
+                    # Accumulate festival intensity (can have multiple festivals)
+                    scale_weight = scale_impact.get(scale, 0.3)
+                    current_intensity = df.loc[combined_mask, festival_intensity_col]
+                    df.loc[combined_mask, festival_intensity_col] = np.maximum(
+                        current_intensity, 
+                        scale_weight
+                    )
                     
-                    # Outdoor rate (for weather interaction)
-                    outdoor_col = f"{city}_{festival_name}_outdoor_rate"
-                    if outdoor_col not in df.columns:
-                        df[outdoor_col] = 0.0
-                    df.loc[year_mask & date_mask, outdoor_col] = outdoor_rate
-                    
-                    # Preparation period
-                    prep_days = time_effects.get('preparation_days_before', 3)
-                    prep_start = start_date - timedelta(days=prep_days)
-                    prep_mask = (df['time'].dt.date >= prep_start) & (df['time'].dt.date < start_date)
-                    
-                    prep_col = f"{city}_{festival_name}_preparation"
-                    if prep_col not in df.columns:
-                        df[prep_col] = 0
-                    df.loc[year_mask & prep_mask, prep_col] = 1
-                    
-                    # Aftermath period
-                    aftermath_days = time_effects.get('aftermath_days_after', 2)
-                    aftermath_end = end_date + timedelta(days=aftermath_days)
-                    aftermath_mask = (df['time'].dt.date > end_date) & (df['time'].dt.date <= aftermath_end)
-                    
-                    aftermath_col = f"{city}_{festival_name}_aftermath"
-                    if aftermath_col not in df.columns:
-                        df[aftermath_col] = 0
-                    df.loc[year_mask & aftermath_mask, aftermath_col] = 1
+                    # Accumulate outdoor impact
+                    outdoor_impact = scale_weight * outdoor_rate
+                    current_outdoor = df.loc[combined_mask, outdoor_impact_col]
+                    df.loc[combined_mask, outdoor_impact_col] = np.maximum(
+                        current_outdoor, 
+                        outdoor_impact
+                    )
                     
             except Exception as e:
                 logging.warning(f"Failed to add festival data for {city} in {year}: {e}")
@@ -400,7 +417,7 @@ class DataProcessor:
                 df[f'{city_lower}_population_raw'] = population
                 
             # Add population type info
-            df['population_type'] = self.population_type
+            df['population_type'] = getattr(self, 'population_type', 'admin')
             df['total_population'] = total_pop
 
     def add_basic_interactions(self):
@@ -421,48 +438,46 @@ class DataProcessor:
             
             # Holiday-Festival amplification
             if 'is_national_holiday' in df.columns:
-                holiday_cols = [col for col in df.columns if '_active' in col and any(city in col for city in ['madrid', 'barcelona', 'valencia', 'seville', 'bilbao'])]
-                
-                for festival_col in holiday_cols:
-                    city = festival_col.split('_')[0]
-                    amplified_col = f'{festival_col}_holiday_amplified'
-                    df[amplified_col] = df[festival_col] * df['is_national_holiday'] * holiday_amplification
-                    
-                    # Population weighted effect
-                    if f'{city}_population_weight' in df.columns:
-                        pop_weighted_col = f'{festival_col}_pop_weighted'
-                        df[pop_weighted_col] = df[festival_col] * df[f'{city}_population_weight']
+                for city in ['madrid', 'barcelona', 'valencia', 'seville', 'bilbao']:
+                    festival_col = f'{city}_has_festival'
+                    if festival_col in df.columns:
+                        # Holiday amplification effect
+                        amplified_col = f'{city}_festival_holiday_amplified'
+                        df[amplified_col] = df[festival_col] * df['is_national_holiday'] * holiday_amplification
+                        
+                        # Population weighted effect
+                        if f'{city}_population_weight' in df.columns:
+                            pop_weighted_col = f'{city}_festival_pop_weighted'
+                            df[pop_weighted_col] = df[festival_col] * df[f'{city}_population_weight']
             
             # Weather-Festival interactions (if weather data is available)
             for city in ['madrid', 'barcelona', 'valencia', 'seville', 'bilbao']:
                 rain_col = f'{city}_rain'
-                if rain_col in df.columns:
+                festival_col = f'{city}_has_festival'
+                outdoor_impact_col = f'{city}_festival_outdoor_impact'
+                
+                if rain_col in df.columns and festival_col in df.columns and outdoor_impact_col in df.columns:
                     # Festival rain reduction effect
-                    festival_cols = [col for col in df.columns if f'{city}_' in col and '_active' in col]
-                    outdoor_cols = [col for col in df.columns if f'{city}_' in col and '_outdoor_rate' in col]
+                    rain_reduction_col = f'{city}_festival_rain_reduction'
+                    df[rain_reduction_col] = (
+                        df[outdoor_impact_col] * 
+                        np.clip(df[rain_col] / rain_threshold, 0, 1)
+                    )
                     
-                    for fest_col, outdoor_col in zip(festival_cols, outdoor_cols):
-                        if outdoor_col in df.columns:
-                            rain_reduction_col = f'{fest_col}_rain_reduction'
-                            df[rain_reduction_col] = (
-                                df[fest_col] * 
-                                df[outdoor_col] * 
-                                np.clip(df[rain_col] / rain_threshold, 0, 1)
-                            )
-                            
-                            # Indoor displacement effect
-                            indoor_displacement_col = f'{fest_col}_indoor_displacement'
-                            df[indoor_displacement_col] = df[rain_reduction_col] * indoor_displacement
+                    # Indoor displacement effect
+                    indoor_displacement_col = f'{city}_festival_indoor_displacement'
+                    df[indoor_displacement_col] = df[rain_reduction_col] * indoor_displacement
             
             # Time-of-day festival effects
             if 'hour' in df.columns:
                 # Evening festival effect (19-23時)
                 df['is_evening'] = ((df['hour'] >= 19) & (df['hour'] <= 23)).astype(int)
                 
-                festival_cols = [col for col in df.columns if '_active' in col]
-                for festival_col in festival_cols:
-                    evening_effect_col = f'{festival_col}_evening_effect'
-                    df[evening_effect_col] = df[festival_col] * df['is_evening']
+                for city in ['madrid', 'barcelona', 'valencia', 'seville', 'bilbao']:
+                    festival_col = f'{city}_has_festival'
+                    if festival_col in df.columns:
+                        evening_effect_col = f'{city}_festival_evening_effect'
+                        df[evening_effect_col] = df[festival_col] * df['is_evening']
 
     def missing_value_handling(self):
         """Handle missing values in the datasets."""
@@ -541,9 +556,11 @@ class DataProcessor:
         
         # Get numeric columns for scaling
         scale_cols = train_features_split.select_dtypes(include=['number']).columns.tolist()
-        train_scaled_cols = []
-        val_scaled_cols = []
-        test_scaled_cols = []
+        
+        # Prepare dictionaries to collect all scaled columns at once
+        train_scaled_dict = {}
+        val_scaled_dict = {}
+        test_scaled_dict = {}
 
         # Apply normalization using train statistics
         for col in scale_cols:
@@ -561,29 +578,28 @@ class DataProcessor:
                 val_scaled = val_features_split[col] * 0
                 test_scaled = test_data_clean[col] * 0
 
-            # Create scaled column DataFrames
-            train_scaled_cols.append(pd.DataFrame({
-                f"{col}_mean_to_t": [mean_col] * len(train_features_split),
-                f"{col}_std_to_t": [std_col] * len(train_features_split),
-                f"{col}_scaled": train_scaled,
-            }, index=train_features_split.index))
+            # Store all columns for each dataset
+            train_scaled_dict[f"{col}_mean_to_t"] = [mean_col] * len(train_features_split)
+            train_scaled_dict[f"{col}_std_to_t"] = [std_col] * len(train_features_split)
+            train_scaled_dict[f"{col}_scaled"] = train_scaled
             
-            val_scaled_cols.append(pd.DataFrame({
-                f"{col}_mean_to_t": [mean_col] * len(val_features_split),
-                f"{col}_std_to_t": [std_col] * len(val_features_split),
-                f"{col}_scaled": val_scaled,
-            }, index=val_features_split.index))
+            val_scaled_dict[f"{col}_mean_to_t"] = [mean_col] * len(val_features_split)
+            val_scaled_dict[f"{col}_std_to_t"] = [std_col] * len(val_features_split)
+            val_scaled_dict[f"{col}_scaled"] = val_scaled
             
-            test_scaled_cols.append(pd.DataFrame({
-                f"{col}_mean_to_t": [mean_col] * len(test_data_clean),
-                f"{col}_std_to_t": [std_col] * len(test_data_clean),
-                f"{col}_scaled": test_scaled,
-            }, index=test_data_clean.index))
+            test_scaled_dict[f"{col}_mean_to_t"] = [mean_col] * len(test_data_clean)
+            test_scaled_dict[f"{col}_std_to_t"] = [std_col] * len(test_data_clean)
+            test_scaled_dict[f"{col}_scaled"] = test_scaled
         
-        # Concatenate scaled columns
-        train_processed = pd.concat([train_features_split] + train_scaled_cols, axis=1)
-        val_processed = pd.concat([val_features_split] + val_scaled_cols, axis=1)
-        test_processed = pd.concat([test_data_clean] + test_scaled_cols, axis=1)
+        # Create single DataFrames with all scaled columns
+        train_scaled_df = pd.DataFrame(train_scaled_dict, index=train_features_split.index)
+        val_scaled_df = pd.DataFrame(val_scaled_dict, index=val_features_split.index)
+        test_scaled_df = pd.DataFrame(test_scaled_dict, index=test_data_clean.index)
+        
+        # Concatenate scaled columns (only 2 operations instead of many)
+        train_processed = pd.concat([train_features_split, train_scaled_df], axis=1)
+        val_processed = pd.concat([val_features_split, val_scaled_df], axis=1)
+        test_processed = pd.concat([test_data_clean, test_scaled_df], axis=1)
         
         # Add target back to train and val
         self.train_df = pd.concat([train_processed, train_target_split], axis=1)

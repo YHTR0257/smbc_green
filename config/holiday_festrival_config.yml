@@ -1,6 +1,6 @@
-# スペイン電力価格予測用 休日・祭典・都市情報設定ファイル (2015-2018)
+# Spanish electricity price prediction - Holiday and festival configuration (2015-2018)
 
-# 都市座標情報
+# City coordinates information
 cities:
   coordinates:
     Madrid: [40.4168, -3.7033]
@@ -9,25 +9,25 @@ cities:
     Sevilla: [37.3891, -5.9845]
     Bilbao: [43.2627, -2.9253]
 
-# 人口重み付け設定 (2015-2018年期間の概算値)
+# Population weights configuration (2015-2018 period estimates)
 population_weights:
-  # パターンA: 行政区域人口ベース
+  # Pattern A: Administrative area population base
   admin_population:
-    Madrid: 3200000     # 約320万人
-    Barcelona: 1600000  # 約160万人  
-    Valencia: 790000    # 約79万人
-    Sevilla: 690000     # 約69万人
-    Bilbao: 352000      # 約35.2万人（2015-2018年実績）
+    Madrid: 3200000     # Approx 3.2M people
+    Barcelona: 1600000  # Approx 1.6M people
+    Valencia: 790000    # Approx 790K people
+    Sevilla: 690000     # Approx 690K people
+    Bilbao: 352000      # Approx 352K people (2015-2018 actual)
     
-  # パターンB: 都市圏人口ベース
+  # Pattern B: Metropolitan area population base
   metro_population:
-    Madrid: 6500000     # マドリード都市圏約650万人
-    Barcelona: 5200000  # バルセロナ都市圏約520万人
-    Valencia: 1700000   # バレンシア都市圏約170万人
-    Sevilla: 1400000    # セビリア都市圏約140万人
-    Bilbao: 950000      # ビルバオ都市圏約95万人
+    Madrid: 6500000     # Madrid metro area approx 6.5M people
+    Barcelona: 5200000  # Barcelona metro area approx 5.2M people
+    Valencia: 1700000   # Valencia metro area approx 1.7M people
+    Sevilla: 1400000    # Sevilla metro area approx 1.4M people
+    Bilbao: 950000      # Bilbao metro area approx 950K people
 
-# スペイン国民の祝日 (2015-2018)
+# Spanish national holidays (2015-2018)
 national_holidays:
   2015:
     "2015-01-01": "New Year's Day"
@@ -77,9 +77,9 @@ national_holidays:
     "2018-12-08": "Immaculate Conception"
     "2018-12-25": "Christmas Day"
 
-# 主要祭典情報 (2015-2018)
+# Major festivals information (2015-2018)
 festivals:
-  # セマナサンタ (聖週間) - 年によってイースターの日程が変動
+  # Semana Santa (Holy Week) - dates vary by year based on Easter
   semana_santa:
     2015:
       start_date: "2015-03-29"  # Palm Sunday
@@ -109,7 +109,7 @@ festivals:
       scale: "large"
       outdoor_rate: 0.7
 
-  # フェリア・デ・アブリル (セビリアの春祭り)
+  # Feria de Abril (Seville Spring Festival)
   feria_abril:
     2015:
       start_date: "2015-04-21"
@@ -139,12 +139,12 @@ festivals:
       scale: "medium"
       outdoor_rate: 0.8
 
-  # サン・フェルミン祭 (パンプローナの牛追い祭り)
+  # San Fermin Festival (Pamplona Running of the Bulls)
   san_fermin:
     2015:
       start_date: "2015-07-06"
       end_date: "2015-07-14"
-      primary_cities: ["Bilbao"]  # バスク地方代表
+      primary_cities: ["Bilbao"]  # Basque region representative
       scale: "medium"
       outdoor_rate: 0.9
       
@@ -169,7 +169,7 @@ festivals:
       scale: "medium"
       outdoor_rate: 0.9
 
-  # ラ・トマティーナ (トマト祭り)
+  # La Tomatina (Tomato Festival)
   la_tomatina:
     2015:
       start_date: "2015-08-26"
@@ -199,7 +199,7 @@ festivals:
       scale: "small"
       outdoor_rate: 1.0
 
-  # レジェス・マゴス (三賢者の日) パレード前夜祭
+  # Reyes Magos (Three Kings Day) Parade
   reyes_magos_parade:
     2015:
       start_date: "2015-01-05"
@@ -229,35 +229,35 @@ festivals:
       scale: "large"
       outdoor_rate: 0.6
 
-# 特徴量生成設定
+# Feature engineering configuration
 feature_engineering:
-  # 距離減衰パラメータ
+  # Distance decay parameters
   distance_decay:
-    max_distance_km: 400  # この距離で影響ゼロ
-    half_effect_distance_km: 200  # この距離で効果50%
+    max_distance_km: 400  # Zero influence at this distance
+    half_effect_distance_km: 200  # 50% effect at this distance
     
-  # お祭り規模による基本影響度
+  # Base impact by festival scale
   scale_impact:
     small: 0.1
     medium: 0.3
     large: 0.6
     
-  # 時間帯別効果
+  # Time-based effects
   time_effects:
-    preparation_days_before: 3  # 準備期間（日前）
-    aftermath_days_after: 2     # 後片付け期間（日後）
-    evening_start_hour: 19      # 夜間開始時刻
-    evening_end_hour: 23        # 夜間終了時刻
+    preparation_days_before: 3  # Preparation period (days before)
+    aftermath_days_after: 2     # Cleanup period (days after)
+    evening_start_hour: 19      # Evening start time
+    evening_end_hour: 23        # Evening end time
     
-  # 相互作用項設定
+  # Interaction settings
   interactions:
-    holiday_amplification_factor: 1.5  # 休日時の効果増幅
-    rain_threshold_mm: 5.0              # 降雨による屋外イベント縮小閾値
-    indoor_displacement_rate: 0.3       # 屋内転換率
-    weekday_afternoon_reduction: -0.2   # 平日午後の電力減少率
-    weekday_evening_increase: 0.3       # 平日夜間の電力増加率
+    holiday_amplification_factor: 1.5  # Effect amplification on holidays
+    rain_threshold_mm: 5.0              # Rain threshold for outdoor event reduction
+    indoor_displacement_rate: 0.3       # Indoor conversion rate
+    weekday_afternoon_reduction: -0.2   # Weekday afternoon power reduction rate
+    weekday_evening_increase: 0.3       # Weekday evening power increase rate
 
-# LASSO特徴量選択設定
+# LASSO feature selection configuration
 feature_selection:
   max_features: 15
   cv_folds: 5
@@ -265,5 +265,5 @@ feature_selection:
     min: 1e-4
     max: 1.0
     num_alphas: 50
-  multicollinearity_threshold: 30  # 条件数閾値
-  correlation_threshold: 0.8       # 高相関ペア検出閾値
+  multicollinearity_threshold: 30  # Condition number threshold
+  correlation_threshold: 0.8       # High correlation pair detection threshold
