@@ -16,6 +16,7 @@ __pycache__/
 *.pptm
 general.json
 .devcontainer/
+.claude/
 
 # -------------------------------
 # データ関連（追跡対象外）

@@ -100,9 +100,6 @@ def preprocess_data(test_df: pd.DataFrame, train_df: pd.DataFrame):
     
     return test_df, train_df
 
-
-
-
 def split_data(data, train_size=0.8):
     """Split the data into training and testing sets."""
     from sklearn.model_selection import train_test_split
