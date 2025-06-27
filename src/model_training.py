@@ -47,7 +47,7 @@ def evaluate_model(model, X_test, y_test):
 def main():
     print("Starting XGBoost training with preprocessed data...")
     print(f"Current working directory: {os.getcwd()}")
-    dataset_name = "dataset_20250618"  # Example dataset name, replace with actual if needed
+    dataset_name = "dataset_20250625_01"  # Example dataset name, replace with actual if needed
     model_name = f"xgboost_model_{dataset_name}"
 
     # Load configuration
