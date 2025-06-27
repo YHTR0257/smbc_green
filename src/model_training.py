@@ -155,8 +155,14 @@ def main(dataset_name: str):
     
     # Save test predictions
     predictions_path = Path(config['data_path']['submits']) /  f'{model_name}.csv'
+    
+    # Convert time back to Europe/Madrid timezone for submission
+    time_column_madrid = pd.to_datetime(time_column)
+    if time_column_madrid.dt.tz is not None and str(time_column_madrid.dt.tz) == 'UTC':
+        time_column_madrid = time_column_madrid.dt.tz_convert('Europe/Madrid')
+    
     submit_df = pd.DataFrame({
-        'time': time_column,
+        'time': time_column_madrid,
         'target': test_predictions
     })
     submit_df.to_csv(predictions_path, index=False, header=False)

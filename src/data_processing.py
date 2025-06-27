@@ -364,12 +364,14 @@ class DataProcessor:
         # Convert time column to datetime if it's not already
         for df in [self.train_data, self.test_data]:
             if not pd.api.types.is_datetime64_any_dtype(df['time']):
+                # Use utc=True to handle mixed timezones, then keep the timezone info
                 df['time'] = pd.to_datetime(df['time'], utc=True)
-                df['year'] = df['time'].dt.year
-                df['month'] = df['time'].dt.month
-                df['day'] = df['time'].dt.day
-                df['day_of_week'] = df['time'].dt.dayofweek
-                df['hour'] = df['time'].dt.hour
+                
+            df['year'] = df['time'].dt.year
+            df['month'] = df['time'].dt.month
+            df['day'] = df['time'].dt.day
+            df['day_of_week'] = df['time'].dt.dayofweek
+            df['hour'] = df['time'].dt.hour
     
     def add_holiday_features(self):
         """Add national holiday features to both datasets."""
