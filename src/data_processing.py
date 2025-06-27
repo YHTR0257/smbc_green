@@ -417,7 +417,6 @@ class DataProcessor:
                 df[f'{city_lower}_population_raw'] = population
                 
             # Add population type info
-            df['population_type'] = getattr(self, 'population_type', 'admin')
             df['total_population'] = total_pop
 
     def add_basic_interactions(self):

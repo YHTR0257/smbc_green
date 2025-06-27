@@ -151,7 +151,7 @@ class ConfigLoader:
             raise KeyError("National holidays configuration not found")
             
         holidays_config = config["national_holidays"]
-        year_key = str(year)
+        year_key = year
         
         if year_key not in holidays_config:
             raise KeyError(f"Holiday configuration for year {year} not found")
@@ -192,7 +192,7 @@ class ConfigLoader:
             raise KeyError("Festivals configuration not found")
             
         festivals_config = config["festivals"]
-        year_key = str(year)
+        year_key = year
         
         result = {}
         for festival_name, festival_data in festivals_config.items():
