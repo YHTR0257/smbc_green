@@ -102,7 +102,12 @@ train_config:
         gamma: [0, 5]  # float range
         reg_alpha: [0, 10]  # float range
         reg_lambda: [1, 10]  # float range
-  
+
+# Feature selection configuration
+feature_selection:
+  enabled: true
+  lasso_cv_folds: 5
+  max_features: 100
 
 experiments:
   - experiment_20250602_001/

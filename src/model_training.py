@@ -39,6 +39,50 @@ def train_model(X_train, y_train, X_val, y_val, config: dict, optimize=False):
     model.train(X_train, y_train, X_val, y_val)  # Fit the model with validation
     return model
 
+def lasso_feature_selection(X_train, y_train, X_val, X_test, config):
+    """LASSO回帰による特徴量選択"""
+    from sklearn.linear_model import LassoCV
+    from sklearn.preprocessing import StandardScaler
+    
+    # 設定を取得
+    feature_config = config.get('feature_selection', {})
+    if not feature_config.get('enabled', False):
+        return X_train, X_val, X_test, X_train.columns.tolist()
+    
+    cv_folds = feature_config.get('lasso_cv_folds', 5)
+    max_features = feature_config.get('max_features', 100)
+    
+    print(f"Running LASSO feature selection...")
+    print(f"  Original features: {X_train.shape[1]}")
+    
+    # 標準化
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    
+    # LASSO CV
+    lasso = LassoCV(cv=cv_folds, random_state=42, max_iter=2000)
+    lasso.fit(X_train_scaled, y_train)
+    
+    # 重要な特徴量を選択
+    selected_mask = lasso.coef_ != 0
+    selected_features = X_train.columns[selected_mask].tolist()
+    
+    # max_featuresを超える場合は係数の絶対値で上位を選択
+    if len(selected_features) > max_features:
+        feature_importance = abs(lasso.coef_[selected_mask])
+        top_indices = feature_importance.argsort()[-max_features:]
+        selected_features = [selected_features[i] for i in top_indices]
+    
+    print(f"  Selected features: {len(selected_features)}")
+    print(f"  Reduction rate: {(1 - len(selected_features)/X_train.shape[1])*100:.1f}%")
+    
+    # 選択された特徴量でデータセットを更新
+    X_train_selected = X_train[selected_features]
+    X_val_selected = X_val[selected_features]
+    X_test_selected = X_test[selected_features]
+    
+    return X_train_selected, X_val_selected, X_test_selected, selected_features
+
 def evaluate_model(model, X_test, y_test):
     """Evaluate the model on the test data."""
     scores = model.score(X_test, y_test)
@@ -120,6 +164,14 @@ def main(dataset_name: str, model_name: str):
     
     if X_train.empty or X_val.empty:
         raise ValueError("Training or validation data is empty. Please check the preprocessed data.")
+    
+    # LASSO feature selection
+    X_train, X_val, X_test, selected_features = lasso_feature_selection(X_train, y_train, X_val, X_test, config)
+    
+    print(f"Features after LASSO selection:")
+    print(f"  X_train shape: {X_train.shape}")
+    print(f"  X_val shape: {X_val.shape}")
+    print(f"  X_test shape: {X_test.shape}")
     
     # Get XGBoost configuration
     xgb_config = config['train_config']['xgboost']
