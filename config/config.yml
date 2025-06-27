@@ -58,6 +58,23 @@ train_config:
     output_size: [10, 20]
     activation_function: ["relu", "tanh"]
     dropout_rate: [0.5, 0.3]
+  lstm:
+    # GPU/CPU configuration
+    use_gpu: auto              # auto, true, false
+    # Model architecture
+    hidden_size: 64            # LSTM hidden size
+    num_layers: 2              # Number of LSTM layers
+    output_size: 1             # Output size (1 for regression)
+    dropout: 0.1               # Dropout rate
+    bidirectional: false       # Use bidirectional LSTM
+    # Training parameters
+    sequence_length: 24        # Length of input sequences (hours)
+    batch_size: 32            # Batch size for training
+    epochs: 100               # Number of training epochs
+    learning_rate: 0.001      # Learning rate for optimizer
+    # Validation settings
+    use_validation: true
+    early_stopping_patience: 10
   denoising_autoencoder:
     input_size: [64, 128]
     hidden_layers: [[128, 64], [256, 128]]
@@ -108,6 +125,23 @@ feature_selection:
   enabled: true
   lasso_cv_folds: 5
   max_features: 100
+
+# Ensemble configuration
+ensemble:
+  enabled: true             # Enable ensemble training
+  method: weighted_average    # average, weighted_average, median
+  optimize_weights: true      # Optimize ensemble weights using validation data
+  models:
+    - type: xgboost
+      name: xgb_diverse
+      seeds: [42, 123, 456]    # Multiple seeds for diversity
+    - type: lstm  
+      name: lstm_diverse
+      seeds: [42, 123]         # Multiple LSTM models with different seeds
+  # Weight optimization settings
+  weight_optimization:
+    method: scipy_minimize     # scipy_minimize, grid_search
+    metric: rmse              # Metric to optimize
 
 experiments:
   - experiment_20250602_001/

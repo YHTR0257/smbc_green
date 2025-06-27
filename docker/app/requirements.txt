@@ -1,5 +1,5 @@
 # データ処理・テンプレートなど（既存）
-numpy
+numpy<2.0  # PyTorch互換性のため1.x系に固定
 pandas
 lxml
 pyyaml

@@ -9,7 +9,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.models import XGBoost
+from src.models import XGBoost, LSTMTrainer, EnsembleModel, PYTORCH_AVAILABLE
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -20,23 +20,37 @@ def load_data(file_path: Path):
     data = pd.read_csv(file_path)
     return data
 
-def train_model(X_train, y_train, X_val, y_val, config: dict, optimize=False):
+def train_model(X_train, y_train, X_val, y_val, config: dict, model_type="xgboost", optimize=False):
     """Train the model using the training data with validation."""
-    model = XGBoost(config)  # Initialize the model
     
-    # Run hyperparameter optimization if requested
-    if optimize:
-        print("Running hyperparameter optimization...")
-        model.optimize_hyperparameters(X_train, y_train, X_val, y_val)
+    if model_type.lower() == "xgboost":
+        model = XGBoost(config)  # Initialize XGBoost model
         
-        # Get optimization results
-        results = model.get_optimization_results()
-        if results['best_params']:
-            print("Optimization completed. Best parameters:")
-            for param, value in results['best_params'].items():
-                print(f"  {param}: {value}")
+        # Run hyperparameter optimization if requested
+        if optimize:
+            print("Running hyperparameter optimization...")
+            model.optimize_hyperparameters(X_train, y_train, X_val, y_val)
+            
+            # Get optimization results
+            results = model.get_optimization_results()
+            if results['best_params']:
+                print("Optimization completed. Best parameters:")
+                for param, value in results['best_params'].items():
+                    print(f"  {param}: {value}")
+        
+        model.train(X_train, y_train, X_val, y_val)  # Fit the model with validation
+        
+    elif model_type.lower() == "lstm":
+        if not PYTORCH_AVAILABLE:
+            raise ImportError("PyTorch is not available. Please install PyTorch to use LSTM models.")
+        
+        model = LSTMTrainer(config)  # Initialize LSTM trainer
+        print("Training LSTM model...")
+        model.train(X_train, y_train, X_val, y_val)  # Train LSTM model
+        
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}. Supported types: 'xgboost', 'lstm'")
     
-    model.train(X_train, y_train, X_val, y_val)  # Fit the model with validation
     return model
 
 def lasso_feature_selection(X_train, y_train, X_val, X_test, config):
@@ -83,13 +97,37 @@ def lasso_feature_selection(X_train, y_train, X_val, X_test, config):
     
     return X_train_selected, X_val_selected, X_test_selected, selected_features
 
+def train_ensemble_model(X_train, y_train, X_val, y_val, config: dict):
+    """Train ensemble model with multiple base models."""
+    ensemble_config = config['ensemble']
+    
+    # Initialize ensemble
+    ensemble = EnsembleModel(ensemble_config)
+    
+    # Prepare model configurations
+    model_configs = {
+        'xgboost': config['train_config']['xgboost'],
+        'lstm': config['train_config']['lstm']
+    }
+    
+    # Train ensemble
+    print("Training ensemble models...")
+    ensemble.train_ensemble(X_train, y_train, X_val, y_val, model_configs)
+    
+    # Optimize weights if enabled
+    if ensemble_config.get('optimize_weights', True):
+        print("Optimizing ensemble weights...")
+        ensemble.optimize_weights(X_val, y_val)
+    
+    return ensemble
+
 def evaluate_model(model, X_test, y_test):
     """Evaluate the model on the test data."""
     scores = model.score(X_test, y_test)
     return scores
 
-def main(dataset_name: str, model_name: str):
-    print("Starting XGBoost training with preprocessed data...")
+def main(dataset_name: str, model_name: str, model_type: str = "xgboost"):
+    print(f"Starting {model_type.upper()} training with preprocessed data...")
     print(f"Current working directory: {os.getcwd()}")
 
     # Load configuration
@@ -173,19 +211,64 @@ def main(dataset_name: str, model_name: str):
     print(f"  X_val shape: {X_val.shape}")
     print(f"  X_test shape: {X_test.shape}")
     
-    # Get XGBoost configuration
-    xgb_config = config['train_config']['xgboost']
-    
-    # Check if hyperparameter optimization is enabled
-    optuna_enabled = xgb_config.get('optuna', {}).get('enabled', False)
-    
-    # Train the model with validation
-    if optuna_enabled:
-        print("Training XGBoost model with hyperparameter optimization...")
-        model = train_model(X_train, y_train, X_val, y_val, xgb_config, optimize=True)
+    # Get model configuration based on model type
+    if model_type.lower() == "xgboost":
+        model_config = config['train_config']['xgboost']
+        optuna_enabled = model_config.get('optuna', {}).get('enabled', False)
+        
+        # Train the model with validation
+        if optuna_enabled:
+            print("Training XGBoost model with hyperparameter optimization...")
+            model = train_model(X_train, y_train, X_val, y_val, model_config, model_type, optimize=True)
+        else:
+            print("Training XGBoost model...")
+            model = train_model(X_train, y_train, X_val, y_val, model_config, model_type, optimize=False)
+            
+    elif model_type.lower() == "lstm":
+        model_config = config['train_config']['lstm']
+        
+        # LSTM doesn't use LASSO feature selection - needs time series structure
+        print("Note: LSTM training requires time series structure, skipping LASSO feature selection...")
+        
+        # Use original features for LSTM (before LASSO selection)
+        # Re-prepare features without LASSO
+        X_train_orig = train_data.drop(columns=drop_cols, errors='ignore')
+        X_val_orig = val_data.drop(columns=drop_cols, errors='ignore')
+        
+        # Add input_size to config for model creation
+        model_config['input_size'] = X_train_orig.shape[1]
+        
+        print("Training LSTM model...")
+        model = train_model(X_train_orig, y_train, X_val_orig, y_val, model_config, model_type, optimize=False)
+        
+        # Update X_train, X_val for evaluation
+        X_train, X_val = X_train_orig, X_val_orig
+        
+    elif model_type.lower() == "ensemble":
+        # Check if ensemble is enabled in config
+        if not config.get('ensemble', {}).get('enabled', False):
+            raise ValueError("Ensemble training is disabled in configuration. Set ensemble.enabled=true in config.yml")
+        
+        print("Training ensemble model...")
+        
+        # For ensemble, prepare both LASSO-selected and original features
+        X_train_orig = train_data.drop(columns=drop_cols, errors='ignore')
+        X_val_orig = val_data.drop(columns=drop_cols, errors='ignore')
+        X_test_orig = test_data.drop(columns=drop_cols, errors='ignore')
+        
+        # Add input sizes to config
+        lstm_config = config['train_config']['lstm'].copy()
+        lstm_config['input_size'] = X_train_orig.shape[1]
+        config['train_config']['lstm'] = lstm_config
+        
+        # Train ensemble model (it will handle feature selection internally)
+        model = train_ensemble_model(X_train, y_train, X_val, y_val, config)
+        
+        # For test predictions, we'll need to prepare data accordingly
+        X_test = X_test  # Keep LASSO-selected features for XGBoost models in ensemble
+        
     else:
-        print("Training XGBoost model...")
-        model = train_model(X_train, y_train, X_val, y_val, xgb_config, optimize=False)
+        raise ValueError(f"Unsupported model type: {model_type}. Supported types: 'xgboost', 'lstm', 'ensemble'")
     
     # Evaluate the model on both training and validation sets
     print("\nEvaluating model performance...")
@@ -219,19 +302,38 @@ def main(dataset_name: str, model_name: str):
     submit_df.to_csv(predictions_path, index=False, header=False)
     print(f"Test predictions saved to {predictions_path}")
     
-    if model.best_iteration:
+    if hasattr(model, 'best_iteration') and model.best_iteration:
         print(f"Best iteration: {model.best_iteration}")
     
     # Save the model
-    model_path = Path(config['data_path']['model_checkpoints']) / f'{model_name}.pkl'
+    model_path = Path(config['data_path']['model_checkpoints']) / f'{model_name}'
     os.makedirs(model_path.parent, exist_ok=True)
-    joblib.dump(model, model_path)
-    print(f"\nModel saved to {model_path}")
     
-    # Save model using XGBoost native format as well
-    native_model_path = Path(config['data_path']['model_checkpoints']) / f'{model_name}.json'
-    model.save_model(str(native_model_path))
-    print(f"Model also saved in XGBoost native format to {native_model_path}")
+    if model_type.lower() == "xgboost":
+        # Save XGBoost model using joblib
+        pkl_path = model_path.with_suffix('.pkl')
+        joblib.dump(model, pkl_path)
+        print(f"\nModel saved to {pkl_path}")
+        
+        # Save model using XGBoost native format as well
+        native_model_path = model_path.with_suffix('.json')
+        model.save_model(str(native_model_path))
+        print(f"Model also saved in XGBoost native format to {native_model_path}")
+        
+    elif model_type.lower() == "lstm":
+        # Save LSTM model using PyTorch format
+        pth_path = model_path.with_suffix('.pth')
+        model.save_model(str(pth_path))
+        print(f"\nLSTM model saved to {pth_path}")
+        
+    elif model_type.lower() == "ensemble":
+        # Save ensemble configuration
+        ensemble_path = model_path.with_suffix('.json')
+        model.save_ensemble(str(ensemble_path))
+        print(f"\nEnsemble configuration saved to {ensemble_path}")
+        
+        # Individual models are saved internally during ensemble training
+        print("Individual ensemble models saved in their respective formats")
     
     print("\nTraining and prediction completed successfully!")
     print(f"Summary:")
@@ -242,5 +344,9 @@ def main(dataset_name: str, model_name: str):
 
 if __name__ == "__main__":
     dataset_name = "dataset_20250625_01"  # Example dataset name, replace with actual if needed
-    model_name = f"xgboost_model_{dataset_name}_002"
-    main(dataset_name, model_name=model_name)
+    
+    # Choose model type: "xgboost", "lstm", or "ensemble"
+    model_type = "ensemble"  # Change to "lstm" for LSTM model or "ensemble" for ensemble training
+    
+    model_name = f"{model_type}_model_{dataset_name}_002"
+    main(dataset_name, model_name=model_name, model_type=model_type)
