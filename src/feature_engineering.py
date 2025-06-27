@@ -128,7 +128,7 @@ if __name__ == "__main__":
         raise FileNotFoundError(f"Configuration file not found at {config_path}. Please check the path.")
     with open(config_path, 'r') as file:
         config = yaml.safe_load(file)
-    config['exp_name'] = "20250625_01"
+    config['exp_name'] = "20250625_02"
 
     train_data_path = Path(os.path.join(parent_dir, config['data_path']['raw_data'], 'train.csv'))
     test_data_path = Path(os.path.join(parent_dir, config['data_path']['raw_data'], 'test.csv'))

@@ -487,6 +487,66 @@ class DataProcessor:
                         evening_effect_col = f'{city}_festival_evening_effect'
                         df[evening_effect_col] = df[festival_col] * df['is_evening']
 
+    def add_supply_demand_features(self):
+        """Add supply-demand balance features to both datasets."""
+        generation_columns = [
+            'generation_biomass', 'generation_fossil_brown_coal/lignite', 
+            'generation_fossil_gas', 'generation_fossil_hard_coal', 
+            'generation_fossil_oil', 'generation_hydro_pumped_storage_consumption',
+            'generation_hydro_run_of_river_and_poundage', 'generation_hydro_water_reservoir',
+            'generation_nuclear', 'generation_other', 'generation_other_renewable',
+            'generation_solar', 'generation_waste', 'generation_wind_onshore'
+        ]
+        
+        for df in [self.train_data, self.test_data]:
+            # Check which generation columns exist in the dataset
+            available_gen_cols = [col for col in generation_columns if col in df.columns]
+            
+            if not available_gen_cols or 'total_load_actual' not in df.columns:
+                logging.warning("Missing generation or load data for supply-demand features")
+                continue
+            
+            # 1. Basic supply-demand indicators
+            # Total supply (sum of all generation)
+            df['total_supply'] = df[available_gen_cols].sum(axis=1)
+            
+            # Supply-demand balance ratio: (supply - demand) / demand
+            df['supply_demand_balance_ratio'] = (df['total_supply'] - df['total_load_actual']) / df['total_load_actual']
+            
+            # Supply sufficiency ratio: supply / demand
+            df['supply_sufficiency_ratio'] = df['total_supply'] / df['total_load_actual']
+            
+            # Supply surplus: supply - demand
+            df['supply_surplus'] = df['total_supply'] - df['total_load_actual']
+            
+            # 2. Power source composition balance
+            # Define power source categories
+            baseload_cols = ['generation_nuclear', 'generation_fossil_hard_coal']
+            renewable_cols = ['generation_solar', 'generation_wind_onshore', 'generation_hydro_run_of_river_and_poundage', 
+                            'generation_hydro_water_reservoir', 'generation_other_renewable']
+            flexible_cols = ['generation_fossil_gas', 'generation_fossil_oil']
+            fossil_cols = ['generation_fossil_brown_coal/lignite', 'generation_fossil_hard_coal', 
+                          'generation_fossil_gas', 'generation_fossil_oil']
+            
+            # Calculate ratios for each category
+            for category_name, category_cols in [
+                ('baseload', baseload_cols),
+                ('renewable', renewable_cols), 
+                ('flexible', flexible_cols),
+                ('fossil', fossil_cols)
+            ]:
+                available_category_cols = [col for col in category_cols if col in df.columns]
+                if available_category_cols:
+                    category_sum = df[available_category_cols].sum(axis=1)
+                    # Avoid division by zero
+                    df[f'{category_name}_ratio'] = np.where(
+                        df['total_supply'] > 0,
+                        category_sum / df['total_supply'],
+                        0
+                    )
+                else:
+                    df[f'{category_name}_ratio'] = 0
+
     def missing_value_handling(self):
         """Handle missing values in the datasets."""
         # Fill missing values with 0 for numeric columns
@@ -524,6 +584,9 @@ class DataProcessor:
         
         # Add basic interaction features
         self.add_basic_interactions()
+        
+        # Add supply-demand balance features
+        self.add_supply_demand_features()
 
         # 欠損値の処理
         self.missing_value_handling()
