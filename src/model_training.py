@@ -44,10 +44,9 @@ def evaluate_model(model, X_test, y_test):
     scores = model.score(X_test, y_test)
     return scores
 
-def main(dataset_name: str):
+def main(dataset_name: str, model_name: str):
     print("Starting XGBoost training with preprocessed data...")
     print(f"Current working directory: {os.getcwd()}")
-    model_name = f"xgboost_model_{dataset_name}"
 
     # Load configuration
     config_path = os.path.join(Path(__file__).parent.parent, 'config', 'config.yml')
@@ -191,4 +190,5 @@ def main(dataset_name: str):
 
 if __name__ == "__main__":
     dataset_name = "dataset_20250625_01"  # Example dataset name, replace with actual if needed
-    main(dataset_name)
+    model_name = f"xgboost_model_{dataset_name}_002"
+    main(dataset_name, model_name=model_name)
