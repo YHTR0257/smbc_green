@@ -1,0 +1,52 @@
+services:
+  app:
+    build:
+      context: ./docker/app
+    container_name: smbc_learning_app_prod
+    volumes:
+      - .:/workspace
+      - ${SSH_AUTH_SOCK}:/ssh-agent  # SSHエージェントのソケットをマウント
+    working_dir: /workspace
+    environment:
+      SSH_AUTH_SOCK: /ssh-agent  # コンテナ側に環境変数を上書き
+      APP_ENV: production  # プロダクション環境設定（フル実行）
+      NVIDIA_VISIBLE_DEVICES: all  # すべてのGPUを認識
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility  # CUDA compute capability
+      CUDA_VISIBLE_DEVICES: all  # CUDA GPU可視性設定
+    command: ["tail", "-f", "/dev/null"]
+    tty: true
+    stdin_open: true
+    # GPU設定（Docker Compose v2.3+）
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+        # プロダクション用リソース制限（必要に応じて調整）
+        limits:
+          memory: 32G  # メモリ上限
+    # 旧Docker版との互換性
+    runtime: nvidia
+    
+    # プロダクション用ネットワーク設定
+    networks:
+      - prod_gpu_network
+    
+    # ヘルスチェック（プロダクション環境用）
+    healthcheck:
+      test: ["CMD", "python", "-c", "import torch; print(torch.cuda.is_available())"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # 再起動ポリシー（プロダクション環境用）
+    restart: unless-stopped
+
+# プロダクション用GPU対応ネットワーク
+networks:
+  prod_gpu_network:
+    driver: bridge
+    name: smbc_learning_prod_network
