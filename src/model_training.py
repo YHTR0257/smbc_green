@@ -44,10 +44,9 @@ def evaluate_model(model, X_test, y_test):
     scores = model.score(X_test, y_test)
     return scores
 
-def main():
+def main(dataset_name: str):
     print("Starting XGBoost training with preprocessed data...")
     print(f"Current working directory: {os.getcwd()}")
-    dataset_name = "dataset_20250625_01"  # Example dataset name, replace with actual if needed
     model_name = f"xgboost_model_{dataset_name}"
 
     # Load configuration
@@ -89,15 +88,17 @@ def main():
     target_col = config['train_config']['general']['target']
     
     # Separate features and targets for train and validation
-    X_train = train_data.drop(columns=[target_col, 'time'], errors='ignore')
+    # Consistently drop the same columns across all datasets
+    drop_cols = [target_col, 'time', 'year']
+        
+    X_train = train_data.drop(columns=drop_cols, errors='ignore')
     y_train = train_data[target_col]
-    X_val = val_data.drop(columns=[target_col, 'time'], errors='ignore')
+    X_val = val_data.drop(columns=drop_cols, errors='ignore')
     y_val = val_data[target_col]
     
     # Test data doesn't have target column
-    submit_df = test_data.copy()
-    submit_df = submit_df["time"]
-    X_test = test_data.drop(columns=['time'], errors='ignore')
+    time_column = test_data["time"].copy()
+    X_test = test_data.drop(columns=drop_cols, errors='ignore')
     
     # Clean target variables - remove NaN values if any
     print(f"Checking for NaN values - Train: {y_train.isna().sum()}, Val: {y_val.isna().sum()}")
@@ -155,7 +156,7 @@ def main():
     # Save test predictions
     predictions_path = Path(config['data_path']['submits']) /  f'{model_name}.csv'
     submit_df = pd.DataFrame({
-        'time': submit_df,
+        'time': time_column,
         'target': test_predictions
     })
     submit_df.to_csv(predictions_path, index=False, header=False)
@@ -183,4 +184,5 @@ def main():
     print(f"  - Final validation RMSE: {val_scores['rmse']:.4f}")
 
 if __name__ == "__main__":
-    main()
+    dataset_name = "dataset_20250625_01"  # Example dataset name, replace with actual if needed
+    main(dataset_name)

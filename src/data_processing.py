@@ -7,6 +7,8 @@ import sys
 import logging
 from datetime import datetime
 
+from sklearn.preprocessing import LabelEncoder
+
 # Add config directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 from config.config_loader import ConfigLoader
@@ -381,7 +383,7 @@ class DataProcessor:
             
             # Initialize holiday columns
             df['is_national_holiday'] = 0
-            df['holiday_name'] = ''
+            df['holiday_name'] = 'none'
             
             # Add holiday data for each year
             for year in range(2015, 2019):
@@ -395,10 +397,15 @@ class DataProcessor:
                         combined_mask = year_mask & date_mask
                         
                         df.loc[combined_mask, 'is_national_holiday'] = 1
-                        df.loc[combined_mask, 'holiday_name'] = holiday_name
                         
                 except Exception as e:
                     logging.warning(f"Failed to add holiday data for {year}: {e}")
+        
+        # categorical encoding for holiday names
+        le = LabelEncoder()
+        le.fit(['none'] + list(self.config_loader.get_holidays_config(2015).values()))
+        for df in [self.train_data, self.test_data]:
+            df['holiday_name'] = le.transform(df['holiday_name'])
 
     def add_population_features(self):
         """Add population-weighted features to both datasets."""
