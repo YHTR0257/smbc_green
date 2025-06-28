@@ -1,5 +1,5 @@
 # PyTorch公式イメージを使用（動作確認済み: CUDA 11.8）
-FROM pytorch/pytorch:2.7.1-cuda11.8-cudnn9-runtime
+FROM pytorch/pytorch:2.7.1-cuda11.8-cudnn9-devel
 
 # 環境変数の設定
 ENV DEBIAN_FRONTEND=noninteractive
