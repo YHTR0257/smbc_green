@@ -9,7 +9,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.models import XGBoost, LSTMTrainer, EnsembleModel, PYTORCH_AVAILABLE
+from src.models import LightGBM, LSTMTrainer, EnsembleModel, PYTORCH_AVAILABLE
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -20,11 +20,11 @@ def load_data(file_path: Path):
     data = pd.read_csv(file_path)
     return data
 
-def train_model(X_train, y_train, X_val, y_val, config: dict, model_type="xgboost", optimize=False):
+def train_model(X_train, y_train, X_val, y_val, config: dict, model_type="lightgbm", optimize=False):
     """Train the model using the training data with validation."""
     
-    if model_type.lower() == "xgboost":
-        model = XGBoost(config)  # Initialize XGBoost model
+    if model_type.lower() == "lightgbm":
+        model = LightGBM(config)  # Initialize LightGBM model
         
         # Run hyperparameter optimization if requested
         if optimize:
@@ -48,8 +48,10 @@ def train_model(X_train, y_train, X_val, y_val, config: dict, model_type="xgboos
         print("Training LSTM model...")
         model.train(X_train, y_train, X_val, y_val)  # Train LSTM model
         
+    elif model_type.lower() == "xgboost":
+        raise ValueError(f"XGBoost is no longer supported. Use 'lightgbm' instead.")
     else:
-        raise ValueError(f"Unsupported model type: {model_type}. Supported types: 'xgboost', 'lstm'")
+        raise ValueError(f"Unsupported model type: {model_type}. Supported types: 'lightgbm', 'lstm'")
     
     return model
 
@@ -106,7 +108,7 @@ def train_ensemble_model(X_train, y_train, X_val, y_val, config: dict):
     
     # Prepare model configurations
     model_configs = {
-        'xgboost': config['train_config']['xgboost'],
+        'lightgbm': config['train_config']['lightgbm'],
         'lstm': config['train_config']['lstm']
     }
     
@@ -126,7 +128,7 @@ def evaluate_model(model, X_test, y_test):
     scores = model.score(X_test, y_test)
     return scores
 
-def main(dataset_name: str, model_name: str, model_type: str = "xgboost"):
+def main(dataset_name: str, model_name: str, model_type: str = "lightgbm"):
     print(f"Starting {model_type.upper()} training with preprocessed data...")
     print(f"Current working directory: {os.getcwd()}")
 
@@ -212,16 +214,16 @@ def main(dataset_name: str, model_name: str, model_type: str = "xgboost"):
     print(f"  X_test shape: {X_test.shape}")
     
     # Get model configuration based on model type
-    if model_type.lower() == "xgboost":
-        model_config = config['train_config']['xgboost']
+    if model_type.lower() == "lightgbm":
+        model_config = config['train_config']['lightgbm']
         optuna_enabled = model_config.get('optuna', {}).get('enabled', False)
         
         # Train the model with validation
         if optuna_enabled:
-            print("Training XGBoost model with hyperparameter optimization...")
+            print("Training LightGBM model with hyperparameter optimization...")
             model = train_model(X_train, y_train, X_val, y_val, model_config, model_type, optimize=True)
         else:
-            print("Training XGBoost model...")
+            print("Training LightGBM model...")
             model = train_model(X_train, y_train, X_val, y_val, model_config, model_type, optimize=False)
             
     elif model_type.lower() == "lstm":
@@ -267,8 +269,10 @@ def main(dataset_name: str, model_name: str, model_type: str = "xgboost"):
         # For test predictions, we'll need to prepare data accordingly
         X_test = X_test  # Keep LASSO-selected features for XGBoost models in ensemble
         
+    elif model_type.lower() == "xgboost":
+        raise ValueError(f"XGBoost is no longer supported. Use 'lightgbm' instead.")
     else:
-        raise ValueError(f"Unsupported model type: {model_type}. Supported types: 'xgboost', 'lstm', 'ensemble'")
+        raise ValueError(f"Unsupported model type: {model_type}. Supported types: 'lightgbm', 'lstm', 'ensemble'")
     
     # Evaluate the model on both training and validation sets
     print("\nEvaluating model performance...")
@@ -309,16 +313,16 @@ def main(dataset_name: str, model_name: str, model_type: str = "xgboost"):
     model_path = Path(config['data_path']['model_checkpoints']) / f'{model_name}'
     os.makedirs(model_path.parent, exist_ok=True)
     
-    if model_type.lower() == "xgboost":
-        # Save XGBoost model using joblib
+    if model_type.lower() == "lightgbm":
+        # Save LightGBM model using joblib
         pkl_path = model_path.with_suffix('.pkl')
         joblib.dump(model, pkl_path)
         print(f"\nModel saved to {pkl_path}")
         
-        # Save model using XGBoost native format as well
-        native_model_path = model_path.with_suffix('.json')
+        # Save model using LightGBM native format as well
+        native_model_path = model_path.with_suffix('.txt')
         model.save_model(str(native_model_path))
-        print(f"Model also saved in XGBoost native format to {native_model_path}")
+        print(f"Model also saved in LightGBM native format to {native_model_path}")
         
     elif model_type.lower() == "lstm":
         # Save LSTM model using PyTorch format

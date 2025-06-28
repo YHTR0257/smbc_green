@@ -1,8 +1,12 @@
-# PyTorch公式イメージを使用（CUDA 12.8対応の最新devel版）
-FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
+# PyTorch公式イメージを使用（動作確認済み: CUDA 11.8）
+FROM pytorch/pytorch:2.7.1-cuda11.8-cudnn9-runtime
 
 # 環境変数の設定
 ENV DEBIAN_FRONTEND=noninteractive
+
+# GPU最適化のための環境変数（念のため）
+ENV CUDA_LAUNCH_BLOCKING=1
+ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 
 # 追加のシステムパッケージをインストール
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -38,9 +42,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # プロジェクトコードをコピー
 COPY . .
 
+# デバイス検出テストスクリプトをコピー（プロジェクトにtest_device.pyとして保存）
+# COPY test_device.py .
+
 # ユーザー環境の設定
 ENV HOME=/home/vscode
 USER vscode
 
-# デフォルトコマンド
-CMD ["bash"]
+# デフォルトコマンド（デバイステストを実行）
+CMD ["python", "test_device.py"]

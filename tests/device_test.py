@@ -202,20 +202,18 @@ class DeviceDetectionTest:
             import lightgbm as lgb
             import numpy as np
             
-            print("LightGBM テスト:")
-            # 簡単なデータセット作成
+            print("\nLightGBM テスト:")
             X = np.random.rand(100, 5)
             y = np.random.rand(100)
             
-            train_data = lgb.Dataset(X, label=y)
+            dtrain = lgb.Dataset(X, label=y)
             params = {
                 'objective': 'regression',
                 'metric': 'rmse',
-                'verbose': -1,
-                'num_boost_round': 10
+                'verbosity': -1
             }
             
-            model = lgb.train(params, train_data, num_boost_round=10)
+            model = lgb.train(params, dtrain, num_boost_round=10, valid_sets=[dtrain], callbacks=[lgb.log_evaluation(0)])
             predictions = model.predict(X[:5])
             
             print(f"  ✅ Training successful")
@@ -226,35 +224,6 @@ class DeviceDetectionTest:
         except Exception as e:
             print(f"  ❌ LightGBM test failed: {e}")
             ml_tests["lightgbm"] = {"status": "failed", "error": str(e)}
-        
-        # XGBoost テスト
-        try:
-            import xgboost as xgb
-            import numpy as np
-            
-            print("\nXGBoost テスト:")
-            X = np.random.rand(100, 5)
-            y = np.random.rand(100)
-            
-            dtrain = xgb.DMatrix(X, label=y)
-            params = {
-                'objective': 'reg:squarederror',
-                'eval_metric': 'rmse',
-                'verbosity': 0
-            }
-            
-            model = xgb.train(params, dtrain, num_boost_round=10)
-            dtest = xgb.DMatrix(X[:5])
-            predictions = model.predict(dtest)
-            
-            print(f"  ✅ Training successful")
-            print(f"  ✅ Prediction successful (shape: {predictions.shape})")
-            
-            ml_tests["xgboost"] = {"status": "success", "version": xgb.__version__}
-            
-        except Exception as e:
-            print(f"  ❌ XGBoost test failed: {e}")
-            ml_tests["xgboost"] = {"status": "failed", "error": str(e)}
         
         self.results["ml_libraries"] = ml_tests
         return ml_tests

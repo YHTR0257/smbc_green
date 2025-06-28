@@ -12,18 +12,22 @@ seaborn
 pytest
 IPython
 
-# 追加：機械学習・DB操作・深層学習
+# 機械学習ライブラリ
 scikit-learn
 scipy
-xgboost
 lightgbm>=4.0.0  # GPU対応も含む最新安定版
 optuna
-optuna-integration[xgboost]
-optuna-integration[lightgbm]  # LightGBM用のOptuna統合
+optuna-integration[lightgbm]
 
-# オプション：さらなる機械学習強化（必要に応じてコメントアウト解除）
-# shap>=0.42.0           # モデル説明性
-# imbalanced-learn       # 不均衡データ対応
-# catboost>=1.2.0        # 第3の勾配ブースティング
-# tqdm>=4.65.0           # プログレスバー
-# wandb>=0.15.0          # 実験トラッキング
+# ニューラルネットワーク開発強化
+tensorboard>=2.13.0   # 訓練監視
+tqdm>=4.65.0          # プログレスバー
+wandb>=0.15.0         # 実験管理（オプション）
+
+# データ拡張・前処理
+torchvision>=0.18.0   # PyTorchに含まれているが明示
+albumentations>=1.3.0 # 画像データ拡張
+
+# モデル保存・変換
+onnx>=1.14.0          # モデル変換
+tensorrt>=8.6.0       # 推論最適化（オプション）

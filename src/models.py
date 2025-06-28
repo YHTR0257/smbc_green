@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.metrics import root_mean_squared_error, r2_score
 
-import xgboost as xgb
+import lightgbm as lgb
 from pathlib import Path
 import warnings
 import logging
@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader, TensorDataset
 PYTORCH_AVAILABLE = True
 
 import optuna
-from optuna.integration.xgboost import XGBoostPruningCallback
+from optuna.integration.lightgbm import LightGBMPruningCallback
 OPTUNA_AVAILABLE = True
 
 dotenv.load_dotenv()
@@ -28,26 +28,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def check_gpu_availability():
-    """Check if GPU is available for XGBoost."""
+    """Check if GPU is available for LightGBM."""
     try:
-        # Try to create a simple DMatrix and train with GPU
+        # Try to create a simple Dataset and train with GPU
         import numpy as np
         test_data = np.random.random((10, 5))
         test_labels = np.random.random(10)
-        dtrain = xgb.DMatrix(test_data, label=test_labels)
+        dtrain = lgb.Dataset(test_data, label=test_labels)
         
         # Try GPU training
         params = {
-            'tree_method': 'gpu_hist',
-            'predictor': 'gpu_predictor',
-            'objective': 'reg:squarederror'
+            'device': 'gpu',
+            'objective': 'regression',
+            'verbosity': -1
         }
         
-        xgb.train(params, dtrain, num_boost_round=1, verbose_eval=False)
-        logger.info("GPU is available for XGBoost")
+        lgb.train(params, dtrain, num_boost_round=1, valid_sets=[dtrain], callbacks=[lgb.log_evaluation(0)])
+        logger.info("GPU is available for LightGBM")
         return True
     except Exception as e:
-        logger.info(f"GPU not available for XGBoost: {e}")
+        logger.info(f"GPU not available for LightGBM: {e}")
         return False
 
 def check_pytorch_gpu():
@@ -72,8 +72,8 @@ def check_pytorch_gpu():
         logger.info(f"Error checking PyTorch GPU: {e}")
         return False
 
-class XGBoost():
-    """XGBoost model with GPU/CPU support and time-based validation."""
+class LightGBM():
+    """LightGBM model with GPU/CPU support and time-based validation."""
 
     def __init__(self, train_config: dict):
         self.random_state = train_config.get('random_seed', [42])[0]
@@ -84,7 +84,7 @@ class XGBoost():
         self.best_params = None
         self.optimization_history = []
         
-        logger.info(f"XGBoost initialized with {'GPU' if self.use_gpu else 'CPU'} mode")
+        logger.info(f"LightGBM initialized with {'GPU' if self.use_gpu else 'CPU'} mode")
         if OPTUNA_AVAILABLE:
             logger.info("Optuna available for hyperparameter optimization")
         else:
@@ -119,36 +119,36 @@ class XGBoost():
             X_val = X_val[:val_sample_size]
             y_val = y_val[:val_sample_size]
         
-        # Create DMatrix for training
-        dtrain = xgb.DMatrix(X_train, label=y_train)
+        # Create Dataset for training
+        dtrain = lgb.Dataset(X_train, label=y_train)
         
         # Prepare parameters with GPU/CPU configuration
         if self.use_gpu:
-            tree_method = self.config.get('tree_method_gpu', 'gpu_hist')
-            predictor = self.config.get('predictor_gpu', 'gpu_predictor')
-            logger.info(f"Using GPU: tree_method={tree_method}, predictor={predictor}")
+            device = 'gpu'
+            logger.info(f"Using GPU device")
         else:
-            tree_method = self.config.get('tree_method_cpu', 'hist')
-            predictor = self.config.get('predictor_cpu', 'auto')
-            logger.info(f"Using CPU: tree_method={tree_method}, predictor={predictor}")
+            device = 'cpu'
+            logger.info(f"Using CPU device")
         
         params = {
-            'objective': self.config.get('objective', 'reg:squarederror'),
-            'tree_method': tree_method,
-            'predictor': predictor,
+            'objective': self.config.get('objective', 'regression'),
+            'device': device,
             'max_depth': self.config.get('max_depth', 6),
-            'eta': self.config.get('eta', 0.1),
-            'eval_metric': self.config.get('eval_metric', 'rmse'),
-            'subsample': self.config.get('subsample', 0.8),
-            'colsample_bytree': self.config.get('colsample_bytree', 0.8),
-            'random_state': self.random_state
+            'learning_rate': self.config.get('learning_rate', 0.1),
+            'metric': self.config.get('metric', 'rmse'),
+            'bagging_fraction': self.config.get('bagging_fraction', 0.8),
+            'feature_fraction': self.config.get('feature_fraction', 0.8),
+            'random_state': self.random_state,
+            'verbosity': -1
         }
         
         # Set up validation if provided
-        evals = [(dtrain, 'train')]
+        valid_sets = [dtrain]
+        valid_names = ['train']
         if X_val is not None and y_val is not None:
-            dval = xgb.DMatrix(X_val, label=y_val)
-            evals.append((dval, 'validation'))
+            dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
+            valid_sets.append(dval)
+            valid_names.append('validation')
         
         # Training parameters
         num_boost_round = self.config.get('num_boost_round', 1000)
@@ -157,30 +157,35 @@ class XGBoost():
         
         # Train the model with error handling for GPU fallback
         try:
-            self.model: xgb.Booster = xgb.train(
+            callbacks = []
+            if verbose_eval > 0:
+                callbacks.append(lgb.log_evaluation(verbose_eval))
+            if early_stopping_rounds is not None:
+                callbacks.append(lgb.early_stopping(early_stopping_rounds))
+            
+            self.model: lgb.Booster = lgb.train(
                 params=params,
-                dtrain=dtrain,
+                train_set=dtrain,
                 num_boost_round=num_boost_round,
-                evals=evals,
-                early_stopping_rounds=early_stopping_rounds,
-                verbose_eval=verbose_eval
+                valid_sets=valid_sets,
+                valid_names=valid_names,
+                callbacks=callbacks
             )
             logger.info(f"Training completed successfully with {'GPU' if self.use_gpu else 'CPU'}")
         except Exception as e:
             if self.use_gpu:
                 logger.warning(f"GPU training failed: {e}. Falling back to CPU...")
                 # Fallback to CPU
-                params['tree_method'] = self.config.get('tree_method_cpu', 'hist')
-                params['predictor'] = self.config.get('predictor_cpu', 'auto')
+                params['device'] = 'cpu'
                 self.use_gpu = False
                 
-                self.model = xgb.train(
+                self.model = lgb.train(
                     params=params,
-                    dtrain=dtrain,
+                    train_set=dtrain,
                     num_boost_round=num_boost_round,
-                    evals=evals,
-                    early_stopping_rounds=early_stopping_rounds,
-                    verbose_eval=verbose_eval
+                    valid_sets=valid_sets,
+                    valid_names=valid_names,
+                    callbacks=callbacks
                 )
                 logger.info("Training completed successfully with CPU fallback")
             else:
@@ -193,8 +198,7 @@ class XGBoost():
 
     def predict(self, X):
         """Predict using the fitted model."""
-        dtest = xgb.DMatrix(X)
-        return self.model.predict(dtest)  # Use the trained model for predictions
+        return self.model.predict(X, num_iteration=self.model.best_iteration)
 
     def score(self, X, y):
         """Return evaluation metrics on the given test data and labels."""
@@ -209,11 +213,11 @@ class XGBoost():
             'best_iteration': self.best_iteration
         }
     
-    def get_feature_importance(self, importance_type='weight'):
+    def get_feature_importance(self, importance_type='split'):
         """Get feature importance from the trained model."""
         if self.model is None:
             raise ValueError("Model has not been trained yet.")
-        return self.model.get_score(importance_type=importance_type)
+        return dict(zip(self.model.feature_name(), self.model.feature_importance(importance_type=importance_type)))
     
     def save_model(self, filepath):
         """Save the trained model to file."""
@@ -223,8 +227,7 @@ class XGBoost():
     
     def load_model(self, filepath):
         """Load a trained model from file."""
-        self.model = xgb.Booster()
-        self.model.load_model(filepath)
+        self.model = lgb.Booster(model_file=filepath)
         return self
     
     def _create_optuna_study(self, optuna_config):
@@ -244,7 +247,7 @@ class XGBoost():
             pruner = optuna.pruners.MedianPruner()
         
         # Create study
-        study_name = optuna_config.get('study_name', 'xgboost_optimization')
+        study_name = optuna_config.get('study_name', 'lightgbm_optimization')
         direction = optuna_config.get('direction', 'minimize')
         storage = optuna_config.get('storage', None)
         
@@ -263,46 +266,44 @@ class XGBoost():
         def objective(trial):
             # Suggest hyperparameters based on search space
             params = {
-                'objective': self.config.get('objective', 'reg:squarederror'),
-                'eval_metric': self.config.get('eval_metric', 'rmse'),
-                'random_state': self.random_state
+                'objective': self.config.get('objective', 'regression'),
+                'metric': self.config.get('metric', 'rmse'),
+                'random_state': self.random_state,
+                'verbosity': -1
             }
             
             # Add GPU/CPU configuration
             if self.use_gpu:
-                params['tree_method'] = self.config.get('tree_method_gpu', 'gpu_hist')
-                params['predictor'] = self.config.get('predictor_gpu', 'gpu_predictor')
+                params['device'] = 'gpu'
             else:
-                params['tree_method'] = self.config.get('tree_method_cpu', 'hist')
-                params['predictor'] = self.config.get('predictor_cpu', 'auto')
+                params['device'] = 'cpu'
             
             # Suggest hyperparameters
             for param, param_range in search_space.items():
-                if param in ['max_depth', 'min_child_weight']:
+                if param in ['max_depth', 'min_child_weight', 'num_leaves']:
                     params[param] = trial.suggest_int(param, param_range[0], param_range[1])
                 else:
                     params[param] = trial.suggest_float(param, param_range[0], param_range[1])
             
-            # Create DMatrices
-            dtrain = xgb.DMatrix(X_train, label=y_train)
-            dval = xgb.DMatrix(X_val, label=y_val)
+            # Create Datasets
+            dtrain = lgb.Dataset(X_train, label=y_train)
+            dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
             
             # Add pruning callback
-            pruning_callback = XGBoostPruningCallback(trial, 'validation-rmse')
+            pruning_callback = LightGBMPruningCallback(trial, 'rmse', 'validation')
             
             # Train model
-            model = xgb.train(
+            model = lgb.train(
                 params,
-                dtrain,
+                train_set=dtrain,
                 num_boost_round=self.config.get('num_boost_round', 1000),
-                evals=[(dtrain, 'train'), (dval, 'validation')],
-                early_stopping_rounds=self.config.get('early_stopping_rounds', 50),
-                verbose_eval=False,
-                callbacks=[pruning_callback]
+                valid_sets=[dtrain, dval],
+                valid_names=['train', 'validation'],
+                callbacks=[lgb.early_stopping(self.config.get('early_stopping_rounds', 50)), pruning_callback]
             )
             
             # Get validation score
-            predictions = model.predict(dval)
+            predictions = model.predict(X_val, num_iteration=model.best_iteration)
             rmse = root_mean_squared_error(y_val, predictions)
             
             return rmse
@@ -343,9 +344,10 @@ class XGBoost():
         # Get search space
         search_space = optuna_config.get('search_space', {
             'max_depth': [3, 10],
-            'eta': [0.01, 0.3],
-            'subsample': [0.6, 1.0],
-            'colsample_bytree': [0.6, 1.0]
+            'learning_rate': [0.01, 0.3],
+            'bagging_fraction': [0.6, 1.0],
+            'feature_fraction': [0.6, 1.0],
+            'num_leaves': [10, 300]
         })
         
         # Create objective function
@@ -714,10 +716,10 @@ class EnsembleModel:
             
             for seed_idx, seed in enumerate(seeds):
                 # Update random seed in config
-                if model_type == 'xgboost':
-                    config = model_configs['xgboost'].copy()
+                if model_type == 'lightgbm':
+                    config = model_configs['lightgbm'].copy()
                     config['random_state'] = seed
-                    model = XGBoost(config)
+                    model = LightGBM(config)
                     model.train(X_train, y_train, X_val, y_val)
                     
                 elif model_type == 'lstm':
@@ -735,6 +737,9 @@ class EnsembleModel:
                     model = LSTMTrainer(config)
                     model.train(X_train, y_train, X_val, y_val)
                 
+                elif model_type == 'xgboost':
+                    logger.warning(f"XGBoost model type is deprecated, use 'lightgbm' instead")
+                    continue
                 else:
                     logger.warning(f"Unsupported model type: {model_type}")
                     continue

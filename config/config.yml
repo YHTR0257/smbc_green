@@ -81,20 +81,16 @@ train_config:
     output_size: [10, 20]
     activation_function: ["relu", "tanh"]
     dropout_rate: [0.5, 0.3]
-  xgboost:
-    objective: reg:squarederror
+  lightgbm:
+    objective: regression
     # GPU/CPU configuration
     use_gpu: auto             # auto, true, false
-    tree_method_gpu: gpu_hist # GPU tree method
-    tree_method_cpu: hist     # CPU tree method
-    predictor_gpu: gpu_predictor # GPU predictor
-    predictor_cpu: auto       # CPU predictor
     max_depth: 6
-    eta: 0.1
-    eval_metric: rmse
+    learning_rate: 0.1
+    metric: rmse
     num_boost_round: 1000
-    subsample: 0.8
-    colsample_bytree: 0.8
+    bagging_fraction: 0.8
+    feature_fraction: 0.8
     early_stopping_rounds: 50
     verbose_eval: 100
     # Validation settings
@@ -107,16 +103,16 @@ train_config:
       timeout: 3600  # seconds (1 hour)
       direction: minimize  # minimize RMSE
       pruner: median  # median, successive_halving, hyperband
-      study_name: "xgboost_optimization"
+      study_name: "lightgbm_optimization"
       storage: null  # Use in-memory storage, can be set to sqlite:///optuna.db
       # Hyperparameter search spaces
       search_space:
         max_depth: [3, 10]  # int range
-        eta: [0.01, 0.3]    # float range
-        subsample: [0.6, 1.0]  # float range
-        colsample_bytree: [0.6, 1.0]  # float range
+        learning_rate: [0.01, 0.3]    # float range
+        bagging_fraction: [0.6, 1.0]  # float range
+        feature_fraction: [0.6, 1.0]  # float range
+        num_leaves: [10, 300]  # int range
         min_child_weight: [1, 10]  # int range
-        gamma: [0, 5]  # float range
         reg_alpha: [0, 10]  # float range
         reg_lambda: [1, 10]  # float range
 
@@ -132,8 +128,8 @@ ensemble:
   method: weighted_average    # average, weighted_average, median
   optimize_weights: true      # Optimize ensemble weights using validation data
   models:
-    - type: xgboost
-      name: xgb_diverse
+    - type: lightgbm
+      name: lgb_diverse
       seeds: [42, 123, 456]    # Multiple seeds for diversity
     - type: lstm  
       name: lstm_diverse
