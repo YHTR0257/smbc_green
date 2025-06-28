@@ -1,0 +1,60 @@
+weather_main:
+  clear:
+    clouds: 0
+  clouds:
+    clouds: 0.2
+  rain:
+    clouds: 0.9
+  snow:
+    clouds: 1.0
+  mist:
+    clouds: 0.9
+  fog:
+    clouds: 0.9
+  haze:
+    clouds: 0.9
+  dust:
+    clouds: 0.9
+  drizzle:
+    clouds: 0.9
+  thunderstorm:
+    clouds: 1.0
+  smoke:
+    clouds: 0.9
+weather_description:
+  "sky_is_clear":
+    clouds: 0
+  few_clouds:
+    clouds: 0.2
+  scattered_clouds:
+    clouds: 0.4
+  broken_clouds:
+    clouds: 0.6
+  overcast_clouds:
+    clouds: 0.8
+  light_rain:
+    clouds: 0.9
+  moderate_rain:
+    clouds: 1.0
+  heavy_rain:
+    clouds: 1.0
+  heavy_intensity_rain:
+    clouds: 1.0
+  mist:
+    clouds: 0.9
+  fog:
+    clouds: 0.9
+  haze:
+    clouds: 0.9
+  light_snow:
+    clouds: 0.9
+  snow:
+    clouds: 1.0
+  heavy_snow:
+    clouds: 1.0
+  dizzle:
+    clouds: 0.9
+  thunderstorm:
+    clouds: 1.0
+  proximity_thunderstorm:
+    clouds: 1.0

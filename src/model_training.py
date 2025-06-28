@@ -1,5 +1,8 @@
 import pandas as pd
 import joblib
+import re
+import copy
+from datetime import datetime
 
 from pathlib import Path
 import yaml
@@ -19,6 +22,214 @@ def load_data(file_path: Path):
     """Load dataset from a CSV file."""
     data = pd.read_csv(file_path)
     return data
+
+def get_feature_groups():
+    """Define feature groups for incremental analysis."""
+    return {
+        "baseline": [
+            "generation_*", "total_load_*", "total_supply", "supply_*", 
+            "*_temp", "*_pressure", "*_humidity", "*_wind_speed"
+        ],
+        "weather_icon": [
+            "*_icon_number", "*_is_day", "*_has_time_info", 
+            "*_is_clear", "*_has_clouds", "*_has_precipitation", "*_is_extreme"
+        ],
+        "weather_main": [
+            "*_main_*"
+        ],
+        "weather_description": [
+            "*_desc_*", "*_precipitation_intensity", 
+            "*_has_shower", "*_has_proximity", "*_is_ragged"
+        ],
+        "temporal": [
+            "year", "month", "day", "hour", "day_of_week", "is_weekend", "is_weekday", "is_evening"
+        ],
+        "discomfort": [
+            "*_discomfort*", "*_diff_temp"
+        ],
+        "festivals": [
+            "*_festival*", "*_holiday*", "is_national_holiday", "holiday_name"
+        ],
+        "population": [
+            "*_population*", "total_population"
+        ],
+        "supply_demand": [
+            "*_supply*", "*_demand*", "*_ratio", "*_balance*", "*_sufficiency*", "*_surplus*"
+        ],
+        "interactions": [
+            "*_amplified", "*_weighted", "*_reduction", "*_displacement", "*_effect"
+        ]
+    }
+
+def expand_feature_patterns(pattern_list, available_columns):
+    """Expand wildcard patterns to actual column names."""
+    expanded_features = []
+    
+    for pattern in pattern_list:
+        if '*' in pattern:
+            # Convert wildcard pattern to regex
+            regex_pattern = pattern.replace('*', '.*')
+            regex = re.compile(f'^{regex_pattern}$')
+            
+            # Find matching columns
+            matches = [col for col in available_columns if regex.match(col)]
+            expanded_features.extend(matches)
+        else:
+            # Exact match
+            if pattern in available_columns:
+                expanded_features.append(pattern)
+    
+    # Remove duplicates while preserving order
+    return list(dict.fromkeys(expanded_features))
+
+def get_features_by_group(group_name, available_columns):
+    """Get actual feature names for a specific group."""
+    feature_groups = get_feature_groups()
+    
+    if group_name not in feature_groups:
+        raise ValueError(f"Unknown feature group: {group_name}. Available groups: {list(feature_groups.keys())}")
+    
+    return expand_feature_patterns(feature_groups[group_name], available_columns)
+
+def train_and_evaluate_subset(X_train, y_train, X_val, y_val, feature_subset, config, model_type="lightgbm"):
+    """Train and evaluate model with a specific feature subset."""
+    # Select features
+    X_train_subset = X_train[feature_subset]
+    X_val_subset = X_val[feature_subset]
+    
+    print(f"Training with {len(feature_subset)} features...")
+    
+    # Train model
+    model_config = config['train_config'][model_type]
+    model = train_model(X_train_subset, y_train, X_val_subset, y_val, model_config, model_type, optimize=False)
+    
+    # Evaluate
+    val_scores = evaluate_model(model, X_val_subset, y_val)
+    
+    return {
+        'model': model,
+        'val_rmse': val_scores['rmse'],
+        'val_r2': val_scores['r2'],
+        'val_mae': val_scores['mae'],
+        'feature_count': len(feature_subset),
+        'features': feature_subset
+    }
+
+def run_incremental_feature_analysis(dataset_name, model_type="lightgbm", baseline_group="baseline", 
+                                    cumulative=False, config=None):
+    """Run incremental feature analysis to measure contribution of each feature group."""
+    
+    print(f"Starting incremental feature analysis...")
+    print(f"Dataset: {dataset_name}, Model: {model_type}, Baseline: {baseline_group}")
+    print(f"Cumulative mode: {cumulative}")
+    
+    if config is None:
+        # Load default config
+        config_path = os.path.join(Path(__file__).parent.parent, 'config', 'config.yml')
+        with open(config_path, 'r') as file:
+            config = yaml.safe_load(file)
+    
+    # Load data
+    processed_data_path = Path(config['data_path']['processed_data'])
+    train_path = processed_data_path / dataset_name / 'train_data.csv'
+    val_path = processed_data_path / dataset_name / 'val_data.csv'
+    
+    print("Loading data...")
+    train_data = load_data(train_path)
+    val_data = load_data(val_path)
+    
+    # Prepare features and targets
+    target_col = config['train_config']['general']['target']
+    drop_cols = [target_col, 'time', 'year']
+    
+    X_train = train_data.drop(columns=drop_cols, errors='ignore')
+    y_train = train_data[target_col]
+    X_val = val_data.drop(columns=drop_cols, errors='ignore')
+    y_val = val_data[target_col]
+    
+    available_columns = X_train.columns.tolist()
+    
+    # Get baseline features
+    baseline_features = get_features_by_group(baseline_group, available_columns)
+    
+    print(f"\nBaseline features ({len(baseline_features)}): {baseline_group}")
+    
+    # Evaluate baseline
+    print("\nEvaluating baseline...")
+    baseline_result = train_and_evaluate_subset(X_train, y_train, X_val, y_val, 
+                                               baseline_features, config, model_type)
+    
+    results = [{
+        'group_added': baseline_group,
+        'features_added': baseline_features,
+        'total_features': baseline_features,
+        **baseline_result
+    }]
+    
+    print(f"Baseline RMSE: {baseline_result['val_rmse']:.4f}")
+    
+    # Get feature groups to test
+    feature_groups = get_feature_groups()
+    groups_to_test = [group for group in feature_groups.keys() if group != baseline_group]
+    
+    current_features = baseline_features.copy()
+    
+    # Test each feature group
+    for group_name in groups_to_test:
+        print(f"\n--- Testing feature group: {group_name} ---")
+        
+        # Get features for this group
+        group_features = get_features_by_group(group_name, available_columns)
+        
+        if not group_features:
+            print(f"No features found for group {group_name}, skipping...")
+            continue
+        
+        # Features to use for this experiment
+        if cumulative:
+            # Add to existing features (cumulative)
+            experiment_features = current_features + [f for f in group_features if f not in current_features]
+            features_added = [f for f in group_features if f not in current_features]
+        else:
+            # Add only to baseline (non-cumulative)
+            experiment_features = baseline_features + [f for f in group_features if f not in baseline_features]
+            features_added = [f for f in group_features if f not in baseline_features]
+        
+        if not features_added:
+            print(f"All features from {group_name} already included, skipping...")
+            continue
+            
+        print(f"Adding {len(features_added)} new features from {group_name}")
+        
+        # Evaluate with added features
+        result = train_and_evaluate_subset(X_train, y_train, X_val, y_val, 
+                                          experiment_features, config, model_type)
+        
+        # Calculate improvement
+        improvement = baseline_result['val_rmse'] - result['val_rmse']
+        relative_improvement = improvement / baseline_result['val_rmse'] * 100
+        
+        result_entry = {
+            'group_added': group_name,
+            'features_added': features_added,
+            'total_features': experiment_features,
+            'rmse_improvement': improvement,
+            'relative_improvement': relative_improvement,
+            'features_added_count': len(features_added),
+            'efficiency': improvement / len(features_added) if len(features_added) > 0 else 0,
+            **result
+        }
+        
+        results.append(result_entry)
+        
+        print(f"RMSE: {result['val_rmse']:.4f} (improvement: {improvement:+.4f}, {relative_improvement:+.2f}%)")
+        print(f"Efficiency: {result_entry['efficiency']:.6f} improvement per feature")
+        
+        # Update current features for next iteration if cumulative
+        if cumulative:
+            current_features = experiment_features.copy()
+    
+    return results
 
 def train_model(X_train, y_train, X_val, y_val, config: dict, model_type="lightgbm", optimize=False):
     """Train the model using the training data with validation."""

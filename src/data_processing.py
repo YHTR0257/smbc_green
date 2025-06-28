@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import logging
 from datetime import datetime
+import re
 
 from sklearn.preprocessing import LabelEncoder
 
@@ -188,6 +189,7 @@ class DataProcessor:
             self.feature_config = self.config_loader.get_feature_engineering_config()
             self.population_admin = self.config_loader.get_population_config("admin")  
             self.population_metro = self.config_loader.get_population_config("metro")
+            self.weather_config = self.config_loader.get_weather_config()
             
             # Set population type based on config
             self.population_type = config.get('population_type', 'admin')
@@ -200,6 +202,7 @@ class DataProcessor:
             self.cities_config = {}
             self.feature_config = {}
             self.population_weights = {}
+            self.weather_config = {}
     
     def cal_discomfort(self):
         """Calculate discomfort index based on temperature and humidity."""
@@ -546,6 +549,288 @@ class DataProcessor:
                     )
                 else:
                     df[f'{category_name}_ratio'] = 0
+    
+    def wind_speed_processing(self):
+        """Process wind speed columns in the datasets."""
+        # Identify wind speed columns
+        wind_speed_cols = [col for col in self.train_data.columns if 'wind_speed' in col]
+        
+        # Clip wind speed values to a reasonable range (0 to 19 m/s)
+        self.train_data[wind_speed_cols] = self.train_data[wind_speed_cols].clip(lower=0, upper=19)
+        self.test_data[wind_speed_cols] = self.test_data[wind_speed_cols].clip(lower=0, upper=19)
+
+    def process_weather_icon_features(self):
+        """Process weather icon features based on weather.md implementation plan."""
+        cities = ["bilbao", "barcelona", "seville", "madrid", "valencia"]
+        
+        for df in [self.train_data, self.test_data]:
+            new_columns = {}
+            
+            for city in cities:
+                icon_col = f"{city}_weather_icon"
+                if icon_col not in df.columns:
+                    continue
+                    
+                # Extract icon features for each row
+                icon_numbers = []
+                day_nights = []
+                has_time_infos = []
+                is_clears = []
+                has_clouds_list = []
+                has_precipitations = []
+                is_extremes = []
+                
+                for icon_code in df[icon_col]:
+                    icon_number, day_night, has_time_info = self._extract_icon_features_robust(icon_code)
+                    is_clear, has_clouds, has_precipitation, is_extreme = self._categorize_icon_number(icon_number)
+                    
+                    icon_numbers.append(icon_number if icon_number is not None else 0)
+                    day_nights.append(day_night if day_night is not None else 0)
+                    has_time_infos.append(has_time_info)
+                    is_clears.append(is_clear)
+                    has_clouds_list.append(has_clouds)
+                    has_precipitations.append(has_precipitation)
+                    is_extremes.append(is_extreme)
+                
+                # Add all icon-derived features
+                new_columns[f"{city}_icon_number"] = icon_numbers
+                new_columns[f"{city}_is_day"] = day_nights
+                new_columns[f"{city}_has_time_info"] = has_time_infos
+                new_columns[f"{city}_is_clear"] = is_clears
+                new_columns[f"{city}_has_clouds"] = has_clouds_list
+                new_columns[f"{city}_has_precipitation"] = has_precipitations
+                new_columns[f"{city}_is_extreme"] = is_extremes
+            
+            # Add all new columns at once if any were calculated
+            if new_columns:
+                new_df = pd.DataFrame(new_columns, index=df.index)
+                # Update the original dataframe reference
+                if df is self.train_data:
+                    self.train_data = pd.concat([df, new_df], axis=1)
+                else:
+                    self.test_data = pd.concat([df, new_df], axis=1)
+    
+    def _extract_icon_features_robust(self, icon_code):
+        """Robust icon feature extraction based on weather.md plan."""
+        if pd.isna(icon_code):
+            return None, None, None
+        
+        icon_str = str(icon_code).strip()
+        
+        # Extract number part (first 1-2 digits)
+        number_match = re.match(r'(\d{1,2})', icon_str)
+        if number_match:
+            icon_number = int(number_match.group(1))
+        else:
+            icon_number = None
+        
+        # d/n flag (check suffix)
+        if icon_str.endswith('d'):
+            day_night = 1  # day
+            has_time_info = 1
+        elif icon_str.endswith('n'):
+            day_night = 0  # night  
+            has_time_info = 1
+        else:
+            day_night = None  # unknown
+            has_time_info = 0
+        
+        return icon_number, day_night, has_time_info
+    
+    def _categorize_icon_number(self, icon_number):
+        """Meteorological classification of icon numbers based on OpenWeatherMap standard."""
+        if pd.isna(icon_number) or icon_number is None:
+            return 0, 0, 0, 0
+        
+        # OpenWeatherMap standard classification
+        clear_sky = 1 if icon_number == 1 else 0
+        clouds = 1 if icon_number in [2, 3, 4] else 0
+        precipitation = 1 if icon_number in [9, 10, 13] else 0
+        extreme = 1 if icon_number in [11, 50] else 0  # thunderstorm, mist/fog
+        
+        return clear_sky, clouds, precipitation, extreme
+    
+    def process_weather_main_features(self):
+        """Process weather main features using config/weather.yml mapping."""
+        cities = ["bilbao", "barcelona", "seville", "madrid", "valencia"]
+        
+        # Get weather main config
+        weather_main_config = self.weather_config.get('weather_main', {})
+        
+        for df in [self.train_data, self.test_data]:
+            new_columns = {}
+            
+            for city in cities:
+                main_col = f"{city}_weather_main"
+                if main_col not in df.columns:
+                    continue
+                
+                # Extract main weather features for each row
+                main_clouds_values = []
+                
+                for main_weather in df[main_col]:
+                    cloud_ratio = self._extract_main_weather_features(main_weather, weather_main_config)
+                    main_clouds_values.append(cloud_ratio)
+                
+                # Add main weather derived features
+                new_columns[f"{city}_main_clouds"] = main_clouds_values
+                
+                # Add categorical features for each main weather type
+                for weather_type in weather_main_config.keys():
+                    weather_type_values = []
+                    for main_weather in df[main_col]:
+                        is_type = 1 if str(main_weather).lower() == weather_type else 0
+                        weather_type_values.append(is_type)
+                    new_columns[f"{city}_main_{weather_type}"] = weather_type_values
+            
+            # Add all new columns at once if any were calculated
+            if new_columns:
+                new_df = pd.DataFrame(new_columns, index=df.index)
+                # Update the original dataframe reference
+                if df is self.train_data:
+                    self.train_data = pd.concat([df, new_df], axis=1)
+                else:
+                    self.test_data = pd.concat([df, new_df], axis=1)
+    
+    def _extract_main_weather_features(self, main_weather, weather_main_config):
+        """Extract features from main weather using config mapping."""
+        if pd.isna(main_weather):
+            return 0.0
+        
+        main_weather_str = str(main_weather).lower().strip()
+        
+        # Get cloud ratio from config
+        weather_info = weather_main_config.get(main_weather_str, {})
+        cloud_ratio = weather_info.get('clouds', 0.0)
+        
+        return cloud_ratio
+    
+    def process_weather_description_features(self):
+        """Process weather description features using config/weather.yml and intensity analysis."""
+        cities = ["bilbao", "barcelona", "seville", "madrid", "valencia"]
+        
+        # Get weather description config
+        weather_desc_config = self.weather_config.get('weather_description', {})
+        
+        for df in [self.train_data, self.test_data]:
+            new_columns = {}
+            
+            for city in cities:
+                desc_col = f"{city}_weather_description"
+                if desc_col not in df.columns:
+                    continue
+                
+                # Extract description features for each row
+                desc_clouds_values = []
+                precipitation_intensities = []
+                has_showers = []
+                has_proximities = []
+                is_raggeds = []
+                
+                for description in df[desc_col]:
+                    # Get cloud ratio from config
+                    cloud_ratio = self._extract_description_cloud_ratio(description, weather_desc_config)
+                    desc_clouds_values.append(cloud_ratio)
+                    
+                    # Extract intensity and special pattern features
+                    intensity_features = self._extract_intensity_features(description)
+                    precipitation_intensities.append(intensity_features['precipitation_intensity'])
+                    has_showers.append(intensity_features['has_shower'])
+                    has_proximities.append(intensity_features['has_proximity'])
+                    is_raggeds.append(intensity_features['is_ragged'])
+                
+                # Add description derived features
+                new_columns[f"{city}_desc_clouds"] = desc_clouds_values
+                new_columns[f"{city}_precipitation_intensity"] = precipitation_intensities
+                new_columns[f"{city}_has_shower"] = has_showers
+                new_columns[f"{city}_has_proximity"] = has_proximities
+                new_columns[f"{city}_is_ragged"] = is_raggeds
+            
+            # Add all new columns at once if any were calculated
+            if new_columns:
+                new_df = pd.DataFrame(new_columns, index=df.index)
+                # Update the original dataframe reference
+                if df is self.train_data:
+                    self.train_data = pd.concat([df, new_df], axis=1)
+                else:
+                    self.test_data = pd.concat([df, new_df], axis=1)
+    
+    def _extract_description_cloud_ratio(self, description, weather_desc_config):
+        """Extract cloud ratio from description using config mapping."""
+        if pd.isna(description):
+            return 0.0
+        
+        desc_str = str(description).lower().strip().replace(' ', '_')
+        
+        # Try exact match first
+        if desc_str in weather_desc_config:
+            return weather_desc_config[desc_str].get('clouds', 0.0)
+        
+        # Try partial matches for common patterns
+        for config_key, config_value in weather_desc_config.items():
+            if config_key in desc_str or desc_str in config_key:
+                return config_value.get('clouds', 0.0)
+        
+        # Default fallback based on common keywords
+        if any(keyword in desc_str for keyword in ['clear', 'sunny']):
+            return 0.0
+        elif any(keyword in desc_str for keyword in ['few_clouds', 'partly']):
+            return 0.2
+        elif any(keyword in desc_str for keyword in ['scattered', 'partly_cloudy']):
+            return 0.4
+        elif any(keyword in desc_str for keyword in ['broken', 'mostly_cloudy']):
+            return 0.6
+        elif any(keyword in desc_str for keyword in ['overcast', 'cloudy']):
+            return 0.8
+        elif any(keyword in desc_str for keyword in ['rain', 'snow', 'storm']):
+            return 1.0
+        
+        return 0.5  # Default neutral value
+    
+    def _extract_intensity_features(self, description):
+        """Extract precipitation intensity and special patterns from description."""
+        if pd.isna(description):
+            return {
+                'precipitation_intensity': 0,
+                'has_shower': 0,
+                'has_proximity': 0,
+                'is_ragged': 0
+            }
+        
+        desc_str = str(description).lower().strip()
+        
+        # Precipitation intensity (0-4 scale) based on weather.md plan
+        intensity = 0
+        if 'very heavy' in desc_str:
+            intensity = 4
+        elif 'heavy intensity' in desc_str or 'heavy' in desc_str:
+            intensity = 3
+        elif 'moderate' in desc_str:
+            intensity = 2
+        elif 'light intensity' in desc_str or 'light' in desc_str:
+            intensity = 1
+        
+        # Special patterns
+        has_shower = 1 if 'shower' in desc_str else 0
+        has_proximity = 1 if 'proximity' in desc_str else 0
+        is_ragged = 1 if 'ragged' in desc_str else 0
+        
+        return {
+            'precipitation_intensity': intensity,
+            'has_shower': has_shower,
+            'has_proximity': has_proximity,
+            'is_ragged': is_ragged
+        }
+
+    def weather_col_processing(self):
+        """Process weather-related cols in the datasets."""
+
+        weather_cols = ['weather_description', 'weather_main', 'weather_icon']
+        for col in weather_cols:
+            if col in self.train_data.columns:
+                self.train_data = self.train_data.drop(columns=col, errors='ignore')
+            if col in self.test_data.columns:
+                self.test_data = self.test_data.drop(columns=col, errors='ignore')
 
     def missing_value_handling(self):
         """Handle missing values in the datasets."""
@@ -562,6 +847,11 @@ class DataProcessor:
             if col in self.test_data.columns:
                 self.test_data[col] = self.test_data[col].fillna('unknown')
 
+        # pressure clipping
+        _pressure_cols = [col for col in self.train_data.columns if 'pressure' in col]
+        self.train_data[_pressure_cols] = self.train_data[_pressure_cols].clip(lower=900, upper=1100)
+        self.test_data[_pressure_cols] = self.test_data[_pressure_cols].clip(lower=900, upper=1100)
+
     def process_all(self):
         """Process data and return train, validation, and test datasets.
         
@@ -570,8 +860,13 @@ class DataProcessor:
         """
         general_config = self.config.get('train_config', {}).get('general', {})
 
-        # date, daytime, and time column handling
-        self.time_handling()
+        # Process weather features before dropping original columns
+        self.process_weather_icon_features()    # Extract icon-based features
+        self.process_weather_main_features()    # Extract main weather features  
+        self.process_weather_description_features()  # Extract description features
+        self.weather_col_processing() # Drop original weather columns
+        
+        self.time_handling()   # date, daytime, and time column handling
         
         # Add population-weighted features
         self.add_population_features()
@@ -615,11 +910,6 @@ class DataProcessor:
         
         # Handle categorical variables for all datasets
         categorical_cols = train_features_split.select_dtypes(include=['object']).columns.tolist()
-        weather_text_cols = [col for col in categorical_cols if any(x in col for x in ['weather_main', 'weather_description', 'weather_icon'])]
-        
-        train_features_split = train_features_split.drop(columns=weather_text_cols, errors='ignore')
-        val_features_split = val_features_split.drop(columns=weather_text_cols, errors='ignore')
-        test_data_clean = test_data_clean.drop(columns=weather_text_cols, errors='ignore')
         
         # Calculate discomfort indices
         self.cal_discomfort()

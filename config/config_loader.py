@@ -249,6 +249,27 @@ class ConfigLoader:
             
         return config["feature_selection"]
     
+    def get_weather_config(self) -> Dict[str, Any]:
+        """
+        天気特徴量設定を取得
+        
+        Returns:
+            天気特徴量設定の辞書
+            
+        Raises:
+            FileNotFoundError: weather.ymlが見つからない場合
+            KeyError: 必要な設定が見つからない場合
+        """
+        config = self.load_yaml_config("weather.yml")
+        
+        # 基本構造の検証
+        required_sections = ["weather_main", "weather_description"]
+        for section in required_sections:
+            if section not in config:
+                raise KeyError(f"weather.ymlに{section}セクションが見つかりません")
+        
+        return config
+    
     def validate_all_configs(self) -> bool:
         """
         全ての設定ファイルの整合性をチェック
