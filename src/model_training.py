@@ -1,12 +1,12 @@
 import pandas as pd
 import joblib
-import re
-import copy
-from datetime import datetime
-
-from pathlib import Path
 import yaml
 import dotenv
+import re
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Union, Tuple
+
+from pathlib import Path
 import sys
 import os
 
@@ -23,7 +23,7 @@ def load_data(file_path: Path):
     data = pd.read_csv(file_path)
     return data
 
-def get_feature_groups():
+def get_feature_groups() -> Dict[str, List[str]]:
     """Define feature groups for incremental analysis."""
     return {
         "baseline": [
@@ -61,7 +61,7 @@ def get_feature_groups():
         ]
     }
 
-def expand_feature_patterns(pattern_list, available_columns):
+def expand_feature_patterns(pattern_list: List[str], available_columns: List[str]) -> List[str]:
     """Expand wildcard patterns to actual column names."""
     expanded_features = []
     
@@ -82,7 +82,7 @@ def expand_feature_patterns(pattern_list, available_columns):
     # Remove duplicates while preserving order
     return list(dict.fromkeys(expanded_features))
 
-def get_features_by_group(group_name, available_columns):
+def get_features_by_group(group_name: str, available_columns: List[str]) -> List[str]:
     """Get actual feature names for a specific group."""
     feature_groups = get_feature_groups()
     
@@ -91,7 +91,8 @@ def get_features_by_group(group_name, available_columns):
     
     return expand_feature_patterns(feature_groups[group_name], available_columns)
 
-def train_and_evaluate_subset(X_train, y_train, X_val, y_val, feature_subset, config, model_type="lightgbm"):
+def train_and_evaluate_subset(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series, 
+                             feature_subset: List[str], config: Dict[str, Any], model_type: str = "lightgbm") -> Dict[str, Any]:
     """Train and evaluate model with a specific feature subset."""
     # Select features
     X_train_subset = X_train[feature_subset]
@@ -115,15 +116,15 @@ def train_and_evaluate_subset(X_train, y_train, X_val, y_val, feature_subset, co
         'features': feature_subset
     }
 
-def run_incremental_feature_analysis(dataset_name, model_type="lightgbm", baseline_group="baseline", 
-                                    cumulative=False, config=None):
+def run_incremental_feature_analysis(dataset_name: str, cumulative: bool, config: dict, 
+                                    model_type: str = "lightgbm", baseline_group: str = "baseline",) -> List[Dict[str, Any]]:
     """Run incremental feature analysis to measure contribution of each feature group."""
     
     print(f"Starting incremental feature analysis...")
     print(f"Dataset: {dataset_name}, Model: {model_type}, Baseline: {baseline_group}")
     print(f"Cumulative mode: {cumulative}")
-    
-    if config is None:
+
+    if not config:
         # Load default config
         config_path = os.path.join(Path(__file__).parent.parent, 'config', 'config.yml')
         with open(config_path, 'r') as file:
@@ -230,6 +231,222 @@ def run_incremental_feature_analysis(dataset_name, model_type="lightgbm", baseli
             current_features = experiment_features.copy()
     
     return results
+
+def analyze_feature_contribution(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Analyze feature group contribution from incremental analysis results."""
+    if len(results) <= 1:
+        return {"error": "Need at least baseline + 1 feature group for analysis"}
+    
+    baseline = results[0]
+    experiments = results[1:]
+    
+    # Sort by improvement (best first)
+    sorted_experiments = sorted(experiments, key=lambda x: x.get('rmse_improvement', 0), reverse=True)
+    
+    analysis = {
+        "baseline": {
+            "group": baseline['group_added'],
+            "rmse": baseline['val_rmse'],
+            "features": baseline['feature_count']
+        },
+        "contribution_ranking": [],
+        "efficiency_ranking": [],
+        "summary": {
+            "best_improvement": None,
+            "most_efficient": None,
+            "total_experiments": len(experiments),
+            "positive_improvements": 0,
+            "negative_improvements": 0
+        }
+    }
+    
+    # Analyze each experiment
+    for exp in sorted_experiments:
+        improvement = exp.get('rmse_improvement', 0)
+        relative_improvement = exp.get('relative_improvement', 0)
+        efficiency = exp.get('efficiency', 0)
+        features_added = exp.get('features_added_count', 0)
+        
+        contribution = {
+            "group": exp['group_added'],
+            "rmse_improvement": improvement,
+            "relative_improvement": relative_improvement,
+            "features_added": features_added,
+            "efficiency": efficiency,
+            "final_rmse": exp['val_rmse'],
+            "final_r2": exp['val_r2'],
+            "significant": abs(improvement) > 0.01  # Consider >0.01 RMSE change significant
+        }
+        
+        analysis["contribution_ranking"].append(contribution)
+        
+        # Count improvements
+        if improvement > 0:
+            analysis["summary"]["positive_improvements"] += 1
+        elif improvement < 0:
+            analysis["summary"]["negative_improvements"] += 1
+    
+    # Efficiency ranking (separate sort)
+    efficiency_sorted = sorted(experiments, key=lambda x: x.get('efficiency', 0), reverse=True)
+    for exp in efficiency_sorted:
+        efficiency_entry = {
+            "group": exp['group_added'],
+            "efficiency": exp.get('efficiency', 0),
+            "rmse_improvement": exp.get('rmse_improvement', 0),
+            "features_added": exp.get('features_added_count', 0)
+        }
+        analysis["efficiency_ranking"].append(efficiency_entry)
+    
+    # Summary statistics
+    if sorted_experiments:
+        analysis["summary"]["best_improvement"] = {
+            "group": sorted_experiments[0]['group_added'],
+            "improvement": sorted_experiments[0].get('rmse_improvement', 0),
+            "relative": sorted_experiments[0].get('relative_improvement', 0)
+        }
+        
+        best_efficiency = max(efficiency_sorted, key=lambda x: x.get('efficiency', 0))
+        analysis["summary"]["most_efficient"] = {
+            "group": best_efficiency['group_added'],
+            "efficiency": best_efficiency.get('efficiency', 0),
+            "improvement": best_efficiency.get('rmse_improvement', 0)
+        }
+    
+    return analysis
+
+def generate_feature_contribution_report(results: List[Dict[str, Any]], analysis: Dict[str, Any], 
+                                        output_path: str, model_type: str = "lightgbm") -> str:
+    """Generate detailed feature contribution analysis report."""
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    report_content = f"""# Feature Group Contribution Analysis Report
+
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Experiment Configuration
+- **Model Type**: {model_type.upper()}
+- **Baseline Group**: {analysis['baseline']['group']}
+- **Baseline RMSE**: {analysis['baseline']['rmse']:.4f}
+- **Baseline Features**: {analysis['baseline']['features']}
+- **Total Experiments**: {analysis['summary']['total_experiments']}
+
+## Summary
+- **Positive Improvements**: {analysis['summary']['positive_improvements']} groups
+- **Negative Improvements**: {analysis['summary']['negative_improvements']} groups
+"""
+
+    if analysis['summary']['best_improvement']:
+        best = analysis['summary']['best_improvement']
+        report_content += f"- **Best Improvement**: {best['group']} ({best['improvement']:+.4f} RMSE, {best['relative']:+.2f}%)\n"
+    
+    if analysis['summary']['most_efficient']:
+        efficient = analysis['summary']['most_efficient']
+        report_content += f"- **Most Efficient**: {efficient['group']} ({efficient['efficiency']:.6f} improvement/feature)\n"
+
+    report_content += """
+## Contribution Ranking (by RMSE Improvement)
+
+| Rank | Feature Group | RMSE Improvement | Relative (%) | Features Added | Efficiency | Final RMSE | R² | Significant |
+|------|---------------|------------------|--------------|----------------|------------|------------|----|-----------| 
+"""
+    
+    for i, contrib in enumerate(analysis['contribution_ranking'], 1):
+        significant = "✓" if contrib['significant'] else "-"
+        report_content += f"| {i} | {contrib['group']} | {contrib['rmse_improvement']:+.4f} | {contrib['relative_improvement']:+.2f}% | {contrib['features_added']} | {contrib['efficiency']:.6f} | {contrib['final_rmse']:.4f} | {contrib['final_r2']:.3f} | {significant} |\n"
+
+    report_content += """
+## Efficiency Ranking (by Improvement per Feature)
+
+| Rank | Feature Group | Efficiency | RMSE Improvement | Features Added |
+|------|---------------|------------|------------------|----------------|
+"""
+    
+    for i, eff in enumerate(analysis['efficiency_ranking'], 1):
+        report_content += f"| {i} | {eff['group']} | {eff['efficiency']:.6f} | {eff['rmse_improvement']:+.4f} | {eff['features_added']} |\n"
+
+    # Detailed analysis section
+    report_content += """
+## Detailed Analysis
+
+### Highly Contributing Groups
+"""
+    
+    significant_groups = [c for c in analysis['contribution_ranking'] if c['significant'] and c['rmse_improvement'] > 0]
+    if significant_groups:
+        for contrib in significant_groups[:3]:  # Top 3
+            report_content += f"- **{contrib['group']}**: {contrib['rmse_improvement']:+.4f} RMSE improvement ({contrib['relative_improvement']:+.2f}%) with {contrib['features_added']} features\n"
+    else:
+        report_content += "- No significantly contributing feature groups found (>0.01 RMSE improvement)\n"
+
+    report_content += """
+### Recommendations
+
+"""
+    
+    # Generate recommendations based on analysis
+    recommendations = []
+    
+    # Best absolute improvement
+    if analysis['summary']['best_improvement'] and analysis['summary']['best_improvement']['improvement'] > 0:
+        best_group = analysis['summary']['best_improvement']['group']
+        recommendations.append(f"1. **Include {best_group}**: Provides the largest absolute improvement ({analysis['summary']['best_improvement']['improvement']:+.4f} RMSE)")
+    
+    # Best efficiency
+    if analysis['summary']['most_efficient'] and analysis['summary']['most_efficient']['efficiency'] > 0:
+        efficient_group = analysis['summary']['most_efficient']['group']
+        if efficient_group != analysis['summary']['best_improvement']['group']:
+            recommendations.append(f"2. **Consider {efficient_group}**: Most efficient feature group ({analysis['summary']['most_efficient']['efficiency']:.6f} improvement/feature)")
+    
+    # Negative contributors
+    negative_groups = [c for c in analysis['contribution_ranking'] if c['rmse_improvement'] < -0.005]  # More than 0.005 degradation
+    if negative_groups:
+        for neg in negative_groups[:2]:  # Top 2 worst
+            recommendations.append(f"- **Avoid {neg['group']}**: Degrades performance ({neg['rmse_improvement']:+.4f} RMSE)")
+    
+    # Low efficiency warning
+    low_efficiency = [c for c in analysis['contribution_ranking'] if 0 < c['rmse_improvement'] < 0.01 and c['features_added'] > 10]
+    if low_efficiency:
+        for low in low_efficiency[:2]:
+            recommendations.append(f"- **Question {low['group']}**: Small improvement ({low['rmse_improvement']:+.4f}) for many features ({low['features_added']})")
+    
+    if not recommendations:
+        recommendations.append("- No clear recommendations - all feature groups show minimal impact")
+    
+    for rec in recommendations:
+        report_content += rec + "\n"
+
+    # Feature details section
+    report_content += """
+## Feature Group Details
+
+"""
+    
+    for result in results:
+        if 'features_added' in result and isinstance(result['features_added'], list):
+            report_content += f"### {result['group_added']}\n"
+            report_content += f"**Features Added ({len(result['features_added'])}):**\n"
+            if len(result['features_added']) <= 10:
+                for feature in result['features_added']:
+                    report_content += f"- {feature}\n"
+            else:
+                for feature in result['features_added'][:7]:
+                    report_content += f"- {feature}\n"
+                report_content += f"- ... and {len(result['features_added']) - 7} more\n"
+            report_content += "\n"
+
+    report_content += f"""
+---
+*Report generated by Feature Analysis System at {timestamp}*
+"""
+
+    # Save report
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(report_content)
+    
+    print(f"Feature contribution report saved to: {output_path}")
+    return output_path
 
 def train_model(X_train, y_train, X_val, y_val, config: dict, model_type="lightgbm", optimize=False):
     """Train the model using the training data with validation."""
@@ -339,8 +556,17 @@ def evaluate_model(model, X_test, y_test):
     scores = model.score(X_test, y_test)
     return scores
 
-def main(dataset_name: str, model_name: str, model_type: str = "lightgbm"):
-    print(f"Starting {model_type.upper()} training with preprocessed data...")
+def main(dataset_name: str, model_name: Optional[str] = None, model_type: str = "lightgbm", 
+         run_feature_analysis: bool = False, baseline_group: str = "baseline", 
+         cumulative: bool = False, analysis_only: bool = False) -> Optional[Tuple[List[Dict[str, Any]], Dict[str, Any]]]:
+    
+    if run_feature_analysis:
+        print(f"Starting Feature Analysis...")
+        print(f"Dataset: {dataset_name}, Model: {model_type}, Baseline: {baseline_group}")
+        print(f"Cumulative mode: {cumulative}, Analysis only: {analysis_only}")
+    else:
+        print(f"Starting {model_type.upper()} training with preprocessed data...")
+    
     print(f"Current working directory: {os.getcwd()}")
 
     # Load configuration
@@ -352,6 +578,69 @@ def main(dataset_name: str, model_name: str, model_type: str = "lightgbm"):
         config = yaml.safe_load(file)
 
     print("Configuration loaded successfully")
+    
+    # Feature Analysis Mode
+    if run_feature_analysis:
+        print("\n" + "="*60)
+        print("FEATURE CONTRIBUTION ANALYSIS")
+        print("="*60)
+        
+        # Run incremental feature analysis
+        results = run_incremental_feature_analysis(
+            dataset_name=dataset_name,
+            model_type=model_type,
+            baseline_group=baseline_group,
+            cumulative=cumulative,
+            config=config
+        )
+        
+        # Analyze contributions
+        print("\nAnalyzing feature contributions...")
+        analysis = analyze_feature_contribution(results)
+        
+        # Generate report
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_filename = f"feature_analysis_{dataset_name}_{model_type}_{baseline_group}_{timestamp}.md"
+        report_path = os.path.join(config['data_path']['reports'], report_filename)
+        
+        generate_feature_contribution_report(results, analysis, report_path, model_type)
+        
+        # Print summary to console
+        print("\n" + "="*60)
+        print("ANALYSIS SUMMARY")
+        print("="*60)
+        baseline_info = analysis.get('baseline', {})
+        summary_info = analysis.get('summary', {})
+        
+        print(f"Baseline ({baseline_group}): {baseline_info.get('rmse', 0):.4f} RMSE with {baseline_info.get('features', 0)} features")
+        
+        best_improvement = summary_info.get('best_improvement')
+        if best_improvement:
+            print(f"Best improvement: {best_improvement.get('group', 'N/A')} ({best_improvement.get('improvement', 0):+.4f} RMSE, {best_improvement.get('relative', 0):+.2f}%)")
+        
+        most_efficient = summary_info.get('most_efficient')
+        if most_efficient:
+            print(f"Most efficient: {most_efficient.get('group', 'N/A')} ({most_efficient.get('efficiency', 0):.6f} improvement/feature)")
+        
+        print(f"\nPositive improvements: {summary_info.get('positive_improvements', 0)}")
+        print(f"Negative improvements: {summary_info.get('negative_improvements', 0)}")
+        print(f"\nDetailed report saved to: {report_path}")
+        
+        # If analysis_only mode, return here
+        if analysis_only:
+            print("\nFeature analysis completed. Exiting (analysis_only=True).")
+            return results, analysis
+        else:
+            print("\nContinuing with full model training using baseline features...")
+            # Continue with normal training using baseline
+    
+    # Generate model name if not provided
+    if model_name is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if run_feature_analysis and not analysis_only:
+            model_name = f"{model_type}_after_analysis_{dataset_name}_{timestamp}"
+        else:
+            model_name = f"{model_type}_model_{dataset_name}_{timestamp}"
 
     # Define paths to processed data
     processed_data_path = Path(config['data_path']['processed_data'])
@@ -417,7 +706,7 @@ def main(dataset_name: str, model_name: str, model_type: str = "lightgbm"):
         raise ValueError("Training or validation data is empty. Please check the preprocessed data.")
     
     # LASSO feature selection
-    X_train, X_val, X_test, selected_features = lasso_feature_selection(X_train, y_train, X_val, X_test, config)
+    X_train, X_val, X_test, _ = lasso_feature_selection(X_train, y_train, X_val, X_test, config)
     
     print(f"Features after LASSO selection:")
     print(f"  X_train shape: {X_train.shape}")
@@ -467,7 +756,7 @@ def main(dataset_name: str, model_name: str, model_type: str = "lightgbm"):
         # For ensemble, prepare both LASSO-selected and original features
         X_train_orig = train_data.drop(columns=drop_cols, errors='ignore')
         X_val_orig = val_data.drop(columns=drop_cols, errors='ignore')
-        X_test_orig = test_data.drop(columns=drop_cols, errors='ignore')
+        # X_test_orig not used in current implementation
         
         # Add input sizes to config
         lstm_config = config['train_config']['lstm'].copy()
@@ -507,7 +796,7 @@ def main(dataset_name: str, model_name: str, model_type: str = "lightgbm"):
     
     # Convert time back to Europe/Madrid timezone for submission
     time_column_madrid = pd.to_datetime(time_column)
-    if time_column_madrid.dt.tz is not None and str(time_column_madrid.dt.tz) == 'UTC':
+    if hasattr(time_column_madrid, 'dt') and time_column_madrid.dt.tz is not None and str(time_column_madrid.dt.tz) == 'UTC':
         time_column_madrid = time_column_madrid.dt.tz_convert('Europe/Madrid')
     
     submit_df = pd.DataFrame({
@@ -517,38 +806,44 @@ def main(dataset_name: str, model_name: str, model_type: str = "lightgbm"):
     submit_df.to_csv(predictions_path, index=False, header=False)
     print(f"Test predictions saved to {predictions_path}")
     
-    if hasattr(model, 'best_iteration') and model.best_iteration:
-        print(f"Best iteration: {model.best_iteration}")
+    if hasattr(model, 'best_iteration') and getattr(model, 'best_iteration', None):
+        print(f"Best iteration: {getattr(model, 'best_iteration', 'N/A')}")
     
     # Save the model
     model_path = Path(config['data_path']['model_checkpoints']) / f'{model_name}'
     os.makedirs(model_path.parent, exist_ok=True)
     
-    if model_type.lower() == "lightgbm":
-        # Save LightGBM model using joblib
-        pkl_path = model_path.with_suffix('.pkl')
-        joblib.dump(model, pkl_path)
-        print(f"\nModel saved to {pkl_path}")
-        
-        # Save model using LightGBM native format as well
-        native_model_path = model_path.with_suffix('.txt')
-        model.save_model(str(native_model_path))
-        print(f"Model also saved in LightGBM native format to {native_model_path}")
-        
-    elif model_type.lower() == "lstm":
-        # Save LSTM model using PyTorch format
-        pth_path = model_path.with_suffix('.pth')
-        model.save_model(str(pth_path))
-        print(f"\nLSTM model saved to {pth_path}")
-        
-    elif model_type.lower() == "ensemble":
-        # Save ensemble configuration
-        ensemble_path = model_path.with_suffix('.json')
-        model.save_ensemble(str(ensemble_path))
-        print(f"\nEnsemble configuration saved to {ensemble_path}")
-        
-        # Individual models are saved internally during ensemble training
-        print("Individual ensemble models saved in their respective formats")
+    try:
+        if model_type.lower() == "lightgbm":
+            # Save LightGBM model using joblib
+            pkl_path = model_path.with_suffix('.pkl')
+            joblib.dump(model, pkl_path)
+            print(f"\nModel saved to {pkl_path}")
+            
+            # Save model using LightGBM native format as well
+            if hasattr(model, 'save_model'):
+                native_model_path = model_path.with_suffix('.txt')
+                model.save_model(str(native_model_path))
+                print(f"Model also saved in LightGBM native format to {native_model_path}")
+            
+        elif model_type.lower() == "lstm":
+            # Save LSTM model using PyTorch format
+            if hasattr(model, 'save_model'):
+                pth_path = model_path.with_suffix('.pth')
+                model.save_model(str(pth_path))
+                print(f"\nLSTM model saved to {pth_path}")
+            
+        elif model_type.lower() == "ensemble":
+            # Save ensemble configuration
+            if hasattr(model, 'save_ensemble'):
+                ensemble_path = model_path.with_suffix('.json')
+                model.save_ensemble(str(ensemble_path))
+                print(f"\nEnsemble configuration saved to {ensemble_path}")
+                
+                # Individual models are saved internally during ensemble training
+                print("Individual ensemble models saved in their respective formats")
+    except Exception as e:
+        print(f"Warning: Could not save model - {e}")
     
     print("\nTraining and prediction completed successfully!")
     print(f"Summary:")
@@ -556,12 +851,36 @@ def main(dataset_name: str, model_name: str, model_type: str = "lightgbm"):
     print(f"  - Validated on {len(X_val)} samples")
     print(f"  - Generated predictions for {len(X_test)} test samples")
     print(f"  - Final validation RMSE: {val_scores['rmse']:.4f}")
+    
+    return None
 
 if __name__ == "__main__":
     dataset_name = "dataset_20250625_01"  # Example dataset name, replace with actual if needed
     
-    # Choose model type: "xgboost", "lstm", or "ensemble"
-    model_type = "ensemble"  # Change to "lstm" for LSTM model or "ensemble" for ensemble training
+    # Choose model type: "lightgbm", "lstm", or "ensemble"
+    model_type = "lightgbm"  # Change to "lstm" for LSTM model or "ensemble" for ensemble training
     
-    model_name = f"{model_type}_model_{dataset_name}_002"
-    main(dataset_name, model_name=model_name, model_type=model_type)
+    # Feature analysis options
+    run_feature_analysis = True  # Set to True to run feature contribution analysis
+    baseline_group = "baseline"  # Baseline feature group
+    cumulative = False  # False: each group vs baseline, True: cumulative addition
+    analysis_only = True  # True: only run analysis, False: continue with training after analysis
+    
+    if run_feature_analysis:
+        print("Running feature contribution analysis...")
+        result = main(
+            dataset_name=dataset_name,
+            model_type=model_type,
+            run_feature_analysis=run_feature_analysis,
+            baseline_group=baseline_group,
+            cumulative=cumulative,
+            analysis_only=analysis_only
+        )
+        if result is not None:
+            results, analysis = result
+        else:
+            print("Analysis returned no results")
+    else:
+        # Normal training mode
+        model_name = f"{model_type}_model_{dataset_name}_002"
+        main(dataset_name, model_name=model_name, model_type=model_type)
