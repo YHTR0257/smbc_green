@@ -15,6 +15,15 @@ IPython
 # 追加：機械学習・DB操作・深層学習
 scikit-learn
 scipy
-XGBoost
+xgboost
+lightgbm>=4.0.0  # GPU対応も含む最新安定版
 optuna
 optuna-integration[xgboost]
+optuna-integration[lightgbm]  # LightGBM用のOptuna統合
+
+# オプション：さらなる機械学習強化（必要に応じてコメントアウト解除）
+# shap>=0.42.0           # モデル説明性
+# imbalanced-learn       # 不均衡データ対応
+# catboost>=1.2.0        # 第3の勾配ブースティング
+# tqdm>=4.65.0           # プログレスバー
+# wandb>=0.15.0          # 実験トラッキング
